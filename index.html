@@ -2,7 +2,11 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0F766E">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <title>轻学英语</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230F766E'/%3E%3Ctext x='16' y='22' font-size='16' text-anchor='middle' fill='%23FBFCFA' font-family='Georgia,serif' font-style='italic'%3EL%3C/text%3E%3C/svg%3E">
 <style>
@@ -31,6 +35,7 @@ body{
 a{color:var(--accent);text-decoration:none}
 button{font-family:inherit;font-size:inherit;cursor:pointer;border:none;background:none;color:inherit}
 input{font-family:inherit;font-size:16px}
+a,button{-webkit-tap-highlight-color:transparent;touch-action:manipulation}
 
 /* ===== 顶栏 ===== */
 .topbar{
@@ -39,7 +44,7 @@ input{font-family:inherit;font-size:16px}
   border-bottom:1px solid var(--hair);
 }
 .topbar-inner{
-  max-width:960px;margin:0 auto;padding:12px 16px;
+  max-width:960px;margin:0 auto;padding:calc(12px + env(safe-area-inset-top)) 16px;
   display:flex;align-items:center;gap:12px;min-height:52px;
 }
 .brand{display:flex;align-items:center;gap:9px;font-weight:700;font-size:17px;letter-spacing:.5px}
@@ -56,7 +61,7 @@ input{font-family:inherit;font-size:16px}
 .navlink:hover{background:var(--accent-soft);color:var(--accent)}
 
 /* ===== 布局容器 ===== */
-.wrap{max-width:960px;margin:0 auto;padding:20px 16px 64px}
+.wrap{max-width:960px;margin:0 auto;padding:20px 16px calc(64px + env(safe-area-inset-bottom))}
 
 /* ===== 首页：总览 ===== */
 .hero{padding:8px 0 20px}
@@ -352,6 +357,32 @@ function speak(text){
   window.speechSynthesis.speak(u);
 }
 
+/* 全局声音管理：同一时刻只播一个（mp3 或系统朗读），再点同句=停止 */
+var curAud = null;
+var curAudUrl = null;
+function stopSound(){
+  curAudUrl = null;
+  if(curAud){
+    try{ curAud.pause(); curAud.onended = null; curAud.onerror = null; }catch(e){}
+    curAud = null;
+  }
+  if('speechSynthesis' in window){ try{ window.speechSynthesis.cancel(); }catch(e){} }
+}
+function playMp3OrSpeak(url, fallbackText){
+  if(curAudUrl === url){ stopSound(); return; } // 同句正在播放时再点=停止
+  stopSound();
+  var aud = new Audio(url);
+  curAud = aud;
+  var fb = false;
+  function fbSpeak(){
+    if(fb) return; fb = true;
+    if(curAud === aud){ curAud = null; curAudUrl = null; speak(fallbackText); }
+  }
+  aud.onerror = fbSpeak;
+  aud.onended = function(){ if(curAud === aud){ curAud = null; curAudUrl = null; } };
+  aud.play().then(function(){ if(curAud === aud){ curAudUrl = url; } }).catch(fbSpeak);
+}
+
 /* 顶部导航：滚动到首页对应区块（考虑顶栏高度） */
 function scrollToSection(id){
   var el = document.getElementById(id);
@@ -379,6 +410,34 @@ function parseHash(){
   route.chap = parts[2] || null;
 }
 window.addEventListener('hashchange', function(){ render(); });
+/* 返回导航：pushState 管理应用内层级，系统返回键按层后退（最深→列表→主页→退出） */
+function nav(h){
+  var cur = location.hash || '#/';
+  if(h === cur) return;
+  try{ history.pushState(null, '', h); }catch(e){}
+  render();
+}
+function redirectTo(h){
+  try{ history.replaceState(null, '', h); }catch(e){}
+  render();
+}
+window.addEventListener('popstate', function(){ render(); });
+/* 拦截站内 #/ 链接，统一走 nav（pushState），保证返回键可逐层后退 */
+document.addEventListener('click', function(ev){
+  if(ev.defaultPrevented) return;
+  var el = ev.target;
+  while(el && el !== document){
+    if(el.tagName === 'A'){
+      var h = el.getAttribute('href');
+      if(h && h.charAt(0) === '#'){
+        var cur = location.hash || '#/';
+        if(h !== cur){ ev.preventDefault(); nav(h); }
+        return;
+      }
+    }
+    el = el.parentNode;
+  }
+});
 
 /* ================= 视图：首页 ================= */
 function findWordSet(slug){
@@ -489,7 +548,7 @@ function nextUnlearned(slug, from, dir){
 
 function renderStudy(){
   var s = findWordSet(route.slug);
-  if(!s){ location.hash = '#/'; return; }
+  if(!s){ redirectTo('#/'); return; }
   if(typeof curIdx !== 'number' || isNaN(curIdx)) curIdx = firstUnlearned(s.slug);
   var kind = s.kind || 'word';
   var d = wordDoneCount(s.slug);
@@ -538,7 +597,7 @@ function renderStudy(){
 
   $('btnPrev').onclick = function(){ curIdx = nextUnlearned(s.slug, curIdx, -1); renderStudy(); };
   $('btnNext').onclick = function(){ curIdx = nextUnlearned(s.slug, curIdx, 1); renderStudy(); };
-  $('btnSound').onclick = function(){ speak(w[0]); };
+  $('btnSound').onclick = function(){ stopSound(); speak(w[0]); };
   $('btnMark').onclick = function(){
     toggleWord(s.slug, curIdx);
     toast(isLearned(s.slug,curIdx) ? '已标记' : '已撤销');
@@ -580,6 +639,11 @@ function renderStudy(){
     });
   });
   ssSetPos('w', s.slug, curIdx);
+  // 滚动到当前词条：恢复/切换后停留在离开时的位置
+  setTimeout(function(){
+    var el = document.querySelector('.flashcard');
+    if(el){ el.scrollIntoView({block:'center'}); }
+  }, 60);
 }
 
 /* ================= 视图：播客来源列表 ================= */
@@ -595,7 +659,7 @@ function levelBadge(e){
 }
 function renderPodList(){
   var p = findPod(route.src);
-  if(!p){ location.hash = '#/'; return; }
+  if(!p){ redirectTo('#/'); return; }
   var d = podDoneCount(p.source);
   var html = '';
   html += '<div class="study-head">'
@@ -654,7 +718,7 @@ function renderPodList(){
 /* ================= 视图：手册章节列表 ================= */
 function renderBookChapters(){
   var bk = findBook(route.slug);
-  if(!bk){ location.hash = '#/'; return; }
+  if(!bk){ redirectTo('#/'); return; }
   var nb=0, db=0;
   bk.chapters.forEach(function(c){
     nb += apecBilingualList(c.blocks).length;
@@ -685,9 +749,9 @@ function renderBookChapters(){
 var apecCur = 0;
 function renderChapterFlow(){
   var bk = findBook(route.slug);
-  if(!bk){ location.hash = '#/'; return; }
+  if(!bk){ redirectTo('#/'); return; }
   var c = findChapter(bk, route.chap);
-  if(!c){ location.hash = '#/books/' + bk.bookId; return; }
+  if(!c){ redirectTo('#/books/' + bk.bookId); return; }
   var bl = apecBilingualList(c.blocks); // blocks 下标序列
   var arr = apecArr(bk.bookId, c.cid);
   // 自动定位第一个未学
@@ -737,11 +801,7 @@ function renderChapterFlow(){
     btn.onclick = function(){
       var i = +btn.getAttribute('data-bi');
       if(!sayTexts[i]) return;
-      var mp3 = new Audio('./_audio/' + bk.bookId + '_' + c.cid + '_' + i + '.mp3');
-      var fb = false;
-      function fbSpeak(){ if(fb) return; fb = true; speak(sayTexts[i]); }
-      mp3.onerror = fbSpeak;
-      mp3.play().catch(fbSpeak);
+      playMp3OrSpeak('./_audio/' + bk.bookId + '_' + c.cid + '_' + i + '.mp3', sayTexts[i]);
     };
   });
 
@@ -770,6 +830,7 @@ function renderChapterFlow(){
 function render(){
   parseHash();
   ssSaveHash(location.hash);
+  stopSound(); // 切换视图时停止正在播放的声音
   window.onscroll = null;
   var homeTarget = null;
   if(route.view === 'words' && route.slug){
@@ -792,7 +853,18 @@ function render(){
     renderHome();
   }
   if(homeTarget){ scrollToSection(homeTarget); }
-  else { window.scrollTo(0,0); }
+  else if(route.view === 'home'){
+    var hy = ssGetHomeY();
+    if(hy){ window.scrollTo(0, hy); } else { window.scrollTo(0,0); }
+  }
+  // 学习页由各自视图负责定位到当前条目（scrollIntoView），此处不再强制置顶
+  if(route.view === 'home'){
+    var hyt = null;
+    window.onscroll = function(){
+      if(hyt) return;
+      hyt = setTimeout(function(){ hyt = null; ssSetHomeY(window.scrollY); }, 150);
+    };
+  }
 }
 
 /* 键盘快捷键（学习页 / 章节流） */
@@ -828,6 +900,12 @@ function ssGetPos(kind, key){
 }
 function ssSetPos(kind, key, val){
   var o = ssRead(); o[kind] = o[kind] || {}; o[kind][key] = val; ssWrite(o);
+}
+function ssSetHomeY(y){
+  var o = ssRead(); o.homeY = (typeof y === 'number' && y > 0) ? y : 0; ssWrite(o);
+}
+function ssGetHomeY(){
+  var o = ssRead(); return (typeof o.homeY === 'number' && o.homeY > 0) ? o.homeY : null;
 }
 function ssRestoreView(){
   var o = ssRead();

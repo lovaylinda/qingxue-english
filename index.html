@@ -114,6 +114,8 @@ a,button{-webkit-tap-highlight-color:transparent;touch-action:manipulation}
   display:flex;align-items:center;gap:10px;flex-wrap:wrap;
   font-size:12px;color:var(--faint);
 }
+.backup-row{display:flex;gap:8px;flex-wrap:wrap}
+.backup-hint{width:100%;line-height:1.5}
 
 .searchbox{margin-bottom:14px}
 .searchbox input{
@@ -552,12 +554,20 @@ function renderHome(){
   });
   html += '</div>';
   html += '<div class="prog-foot"><span>进度只保存在本机浏览器 · 清除浏览器数据前请先备份</span>'
+       + '<span class="backup-row">'
        + '<button class="mini-btn" id="btnBackup">💾 备份进度</button>'
+       + '<button class="mini-btn" id="btnCopy">📋 复制备份</button>'
        + '<button class="mini-btn" id="btnRestore">📂 恢复进度</button>'
+       + '</span>'
+       + '<span class="backup-hint">备份：弹保存框时选本机/下载位置即可保存到手机；点「复制备份」可粘贴到备忘录保存。恢复：点恢复后选「文件/文件管理器」，找到本机保存的备份文件即可。</span>'
        + '<input type="file" id="fileRestore" accept=".json,application/json" style="display:none"></div>';
   $('app').innerHTML = html;
   $('btnBackup').onclick = backupToFile;
-  $('btnRestore').onclick = function(){ $('fileRestore').click(); };
+  $('btnCopy').onclick = copyBackupText;
+  $('btnRestore').onclick = function(){
+    toast('恢复：在文件列表选「文件/文件管理器」，找到本机保存的备份 JSON 文件');
+    $('fileRestore').click();
+  };
   $('fileRestore').onchange = function(){
     if(this.files && this.files[0]){ restoreFromFile(this.files[0]); }
     this.value = '';
@@ -980,17 +990,65 @@ function buildBackup(){
 }
 function backupToFile(){
   var o = buildBackup();
-  var blob = new Blob([JSON.stringify(o, null, 2)], {type:'application/json'});
-  var url = URL.createObjectURL(blob);
-  var a = document.createElement('a');
+  var text = JSON.stringify(o, null, 2);
   var d = new Date();
   var pad = function(n){ return n < 10 ? '0' + n : '' + n; };
+  var fname = 'qingxue-progress-' + d.getFullYear() + pad(d.getMonth()+1) + pad(d.getDate()) + '.json';
+  // 优先 File System Access API：弹出系统保存对话框，可直接存到手机本机/下载目录（不弹第三方 app 分享面板）
+  if(window.showSaveFilePicker){
+    window.showSaveFilePicker({
+      suggestedName: fname,
+      types: [{ description: 'JSON 备份', accept: { 'application/json': ['.json'] } }]
+    }).then(function(handle){
+      return handle.createWritable().then(function(w){
+        return w.write(text).then(function(){ return w.close(); });
+      });
+    }).then(function(){
+      toast('进度已保存到本机（' + fname + '）');
+    }).catch(function(err){
+      // 用户取消（AbortError）/权限拒绝：静默，不打扰
+      if(err && (err.name === 'AbortError' || err.name === 'SecurityError')) return;
+      downloadBackup(text, fname);
+      toast('系统保存不可用，已改用下载方式');
+    });
+  } else {
+    downloadBackup(text, fname);
+  }
+}
+function downloadBackup(text, fname){
+  var blob = new Blob([text], {type:'application/json'});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
   a.href = url;
-  a.download = 'qingxue-progress-' + d.getFullYear() + pad(d.getMonth()+1) + pad(d.getDate()) + '.json';
+  a.download = fname;
   document.body.appendChild(a);
   a.click();
   setTimeout(function(){ URL.revokeObjectURL(url); if(a.parentNode){ a.parentNode.removeChild(a); } }, 800);
-  toast('进度已备份为 JSON 文件');
+  toast('进度已备份为 ' + fname);
+}
+function copyBackupText(){
+  var o = buildBackup();
+  var text = JSON.stringify(o, null, 2);
+  var okMsg = '备份内容已复制，可粘贴到备忘录保存';
+  function legacyCopy(){
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    var ok = false;
+    try{ ok = document.execCommand('copy'); }catch(e){ ok = false; }
+    document.body.removeChild(ta);
+    return ok;
+  }
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(function(){ toast(okMsg); })
+    .catch(function(){ toast(legacyCopy() ? okMsg : '复制失败：浏览器不支持剪贴板'); });
+  } else {
+    toast(legacyCopy() ? okMsg : '复制失败：浏览器不支持剪贴板');
+  }
 }
 function applyBackup(o){
   if(!o || typeof o !== 'object' || Array.isArray(o)) return '文件内容不是有效的进度对象';

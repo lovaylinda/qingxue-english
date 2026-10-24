@@ -1,5 +1,5 @@
 /* 轻学英语 PWA Service Worker —— 全量缓存，离线可用 */
-const CACHE = 'qingxue-v3';
+const CACHE = 'qingxue-v9';
 const ASSETS = [
   './index.html',
   './manifest.webmanifest',
@@ -31,7 +31,7 @@ self.addEventListener('fetch', (e) => {
     caches.match(req).then((hit) => {
       if (hit) return hit;
       return fetch(req).then((res) => {
-        if (res && res.ok && new URL(req.url).pathname.endsWith('index.html')) {
+        if (res && res.ok && (new URL(req.url).pathname.endsWith('index.html') || new URL(req.url).pathname.endsWith('.mp3'))) {
           const copy = res.clone();
           caches.open(CACHE).then((c) => c.put(req, copy));
         }

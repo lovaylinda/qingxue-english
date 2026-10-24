@@ -831,7 +831,12 @@ function ssSetPos(kind, key, val){
 }
 function ssRestoreView(){
   var o = ssRead();
-  if(!location.hash && o.hash && o.hash !== '#/'){ location.hash = o.hash; }
+  if(!location.hash && o.hash){
+    var h = o.hash;
+    // 只恢复真正的子视图（#/words/slug、#/pods/source、#/books/...），
+    // 忽略主页锚点导航（如 #/words、#/pods、#/books），避免每次打开被滚到主页某区块
+    if(h !== '#/' && /^#\/(words|pods|books)\//.test(h)){ location.hash = h; }
+  }
 }
 
 loadState();

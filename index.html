@@ -109,6 +109,11 @@ a,button{-webkit-tap-highlight-color:transparent;touch-action:manipulation}
 }
 .mini-btn:hover{border-color:var(--accent);color:var(--accent)}
 .mini-btn.danger{color:var(--danger)}
+.prog-foot{
+  margin-top:26px;padding-top:14px;border-top:1px dashed var(--hair);
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  font-size:12px;color:var(--faint);
+}
 
 .searchbox{margin-bottom:14px}
 .searchbox input{
@@ -521,7 +526,17 @@ function renderHome(){
          + '<span class="pbar"><i style="width:' + pct(db,nb) + '%"></i></span></a>';
   });
   html += '</div>';
+  html += '<div class="prog-foot"><span>进度只保存在本机浏览器 · 清除浏览器数据前请先备份</span>'
+       + '<button class="mini-btn" id="btnBackup">💾 备份进度</button>'
+       + '<button class="mini-btn" id="btnRestore">📂 恢复进度</button>'
+       + '<input type="file" id="fileRestore" accept=".json,application/json" style="display:none"></div>';
   $('app').innerHTML = html;
+  $('btnBackup').onclick = backupToFile;
+  $('btnRestore').onclick = function(){ $('fileRestore').click(); };
+  $('fileRestore').onchange = function(){
+    if(this.files && this.files[0]){ restoreFromFile(this.files[0]); }
+    this.value = '';
+  };
 }
 
 /* ================= 视图：单词学习 ================= */
@@ -915,6 +930,93 @@ function ssRestoreView(){
     // 忽略主页锚点导航（如 #/words、#/pods、#/books），避免每次打开被滚到主页某区块
     if(h !== '#/' && /^#\/(words|pods|books)\//.test(h)){ location.hash = h; }
   }
+}
+
+/* ============ 进度备份 / 恢复（localStorage 导出/导入） ============ */
+function buildBackup(){
+  var o = {app:'qingxue-english', type:'progress-backup', version:1, exportedAt:new Date().toISOString()};
+  try{
+    var raw = localStorage.getItem(STORE_KEY);
+    if(raw){ o.state = JSON.parse(raw); }
+  }catch(e){}
+  if(!o.state || typeof o.state !== 'object'){ o.state = {}; }
+  try{
+    var raw2 = localStorage.getItem(SS_KEY);
+    if(raw2){ o.ss = JSON.parse(raw2); }
+  }catch(e){}
+  return o;
+}
+function backupToFile(){
+  var o = buildBackup();
+  var blob = new Blob([JSON.stringify(o, null, 2)], {type:'application/json'});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  var d = new Date();
+  var pad = function(n){ return n < 10 ? '0' + n : '' + n; };
+  a.href = url;
+  a.download = 'qingxue-progress-' + d.getFullYear() + pad(d.getMonth()+1) + pad(d.getDate()) + '.json';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function(){ URL.revokeObjectURL(url); if(a.parentNode){ a.parentNode.removeChild(a); } }, 800);
+  toast('进度已备份为 JSON 文件');
+}
+function applyBackup(o){
+  if(!o || typeof o !== 'object' || Array.isArray(o)) return '文件内容不是有效的进度对象';
+  if(o.app !== 'qingxue-english' || o.type !== 'progress-backup') return '不是「轻学英语」的进度备份文件';
+  if(typeof o.state !== 'object' || o.state === null || Array.isArray(o.state)) return '备份缺少学习进度（state 字段缺失或格式错误）';
+  var FIELDS = ['words','pods','podPos','apec'];
+  for(var i=0;i<FIELDS.length;i++){
+    var f = FIELDS[i];
+    var v = o.state[f];
+    if(v !== undefined && (v === null || typeof v !== 'object' || Array.isArray(v))) return '进度字段 state.' + f + ' 格式异常（应为对象）';
+    if(v && typeof v === 'object' && !Array.isArray(v)){
+      if(f === 'apec'){
+        // apec 结构：{bookId: {cid: [已学序号]}}，两级容器
+        for(var bk in v){
+          if(!Object.prototype.hasOwnProperty.call(v, bk)) continue;
+          var m = v[bk];
+          if(m === null || typeof m !== 'object' || Array.isArray(m)) return '进度字段 state.apec.' + bk + ' 格式异常（应为对象）';
+          for(var cid in m){
+            if(!Object.prototype.hasOwnProperty.call(m, cid)) continue;
+            if(!Array.isArray(m[cid])) return '进度字段 state.apec.' + bk + '.' + cid + ' 格式异常（应为数组）';
+          }
+        }
+      }else if(f === 'podPos'){
+        for(var k in v){
+          if(!Object.prototype.hasOwnProperty.call(v, k)) continue;
+          if(typeof v[k] !== 'number' || isNaN(v[k])) return '进度字段 state.podPos.' + k + ' 格式异常（应为数字）';
+        }
+      }else{
+        for(var k2 in v){
+          if(!Object.prototype.hasOwnProperty.call(v, k2)) continue;
+          if(!Array.isArray(v[k2])) return '进度字段 state.' + f + '.' + k2 + ' 格式异常（应为数组）';
+        }
+      }
+    }
+  }
+  if(o.ss !== undefined && (o.ss === null || typeof o.ss !== 'object' || Array.isArray(o.ss))) return '会话字段 ss 格式异常';
+  try{ localStorage.setItem(STORE_KEY, JSON.stringify(o.state)); }
+  catch(e){ return '写入进度失败：浏览器本地存储不可用'; }
+  if(o.ss !== undefined){
+    try{ localStorage.setItem(SS_KEY, JSON.stringify(o.ss)); }
+    catch(e){ return '写入会话数据失败：浏览器本地存储不可用'; }
+  }
+  return null;
+}
+function restoreFromFile(file){
+  var reader = new FileReader();
+  reader.onload = function(){
+    var text = reader.result;
+    var o = null;
+    try{ o = JSON.parse(text); }
+    catch(e){ toast('恢复失败：文件不是有效的 JSON'); return; }
+    var err = applyBackup(o);
+    if(err){ toast('恢复失败：' + err); return; }
+    toast('恢复成功，即将刷新…');
+    setTimeout(function(){ location.reload(); }, 500);
+  };
+  reader.onerror = function(){ toast('恢复失败：无法读取文件'); };
+  reader.readAsText(file);
 }
 
 loadState();

@@ -1,5 +1,5 @@
 /* 轻学英语 PWA Service Worker —— 全量缓存，离线可用 */
-const CACHE = 'qingxue-v11';
+const CACHE = 'qingxue-v12';
 const ASSETS = [
   './index.html',
   './manifest.webmanifest',

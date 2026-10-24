@@ -414,9 +414,26 @@ function parseHash(){
   route.src = parts[1] || null;
   route.chap = parts[2] || null;
 }
-window.addEventListener('hashchange', function(){ render(); });
+var bootAt = Date.now();   // 启动时刻：用于识别"加载后浏览器重置 URL"的兜底窗口
+var userNav = false;       // 是否有用户主动导航（有则不再干预返回行为）
+var ssReapplied = false;   // 兜底恢复只执行一次
+window.addEventListener('hashchange', function(){
+  // 兜底：必须先于 render() 判断——render 会先用当前空 hash 覆盖 ss.hash，
+  // 若放在其后，ss 里保存的离开位置就被清掉了
+  if(!userNav && !ssReapplied && !location.hash && (Date.now() - bootAt) < 3000){
+    var o = ssRead();
+    var h = o && o.hash;
+    if(h && h.charAt(0) === '#' && h !== '#/' && h !== '#'){
+      ssReapplied = true;
+      location.hash = h; // 设置 hash 会再触发 hashchange，由下一次事件正常渲染
+      return;
+    }
+  }
+  render();
+});
 /* 返回导航：pushState 管理应用内层级，系统返回键按层后退（最深→列表→主页→退出） */
 function nav(h){
+  userNav = true;
   var cur = location.hash || '#/';
   if(h === cur) return;
   try{ history.pushState(null, '', h); }catch(e){}
@@ -426,7 +443,15 @@ function redirectTo(h){
   try{ history.replaceState(null, '', h); }catch(e){}
   render();
 }
-window.addEventListener('popstate', function(){ render(); });
+window.addEventListener('popstate', function(){ userNav = true; render(); });
+/* 兜底：加载完成（含 BFCache 恢复）后若 hash 缺失，按 ss 恢复离开时的视图 */
+window.addEventListener('pageshow', function(){
+  if(!location.hash || location.hash === '#/' || location.hash === '#'){
+    var o = ssRead();
+    var h = o && o.hash;
+    if(h && h.charAt(0) === '#' && h !== '#/' && h !== '#'){ location.hash = h; }
+  }
+});
 /* 拦截站内 #/ 链接，统一走 nav（pushState），保证返回键可逐层后退 */
 document.addEventListener('click', function(ev){
   if(ev.defaultPrevented) return;
@@ -436,7 +461,7 @@ document.addEventListener('click', function(ev){
       var h = el.getAttribute('href');
       if(h && h.charAt(0) === '#'){
         var cur = location.hash || '#/';
-        if(h !== cur){ ev.preventDefault(); nav(h); }
+        if(h !== cur){ userNav = true; ev.preventDefault(); nav(h); }
         return;
       }
     }
@@ -900,8 +925,14 @@ document.addEventListener('keydown', function(ev){
 /* ============ 会话恢复：离开后重载回到原视图与原位置 ============ */
 var SS_KEY = 'qingxue-ss';
 function ssRead(){
-  try{ var raw = localStorage.getItem(SS_KEY); return raw ? JSON.parse(raw) : {}; }
-  catch(e){ return {}; }
+  try{
+    var raw = localStorage.getItem(SS_KEY);
+    if(raw){
+      var o = JSON.parse(raw);
+      return (o && typeof o === 'object' && !Array.isArray(o)) ? o : {};
+    }
+  }catch(e){}
+  return {};
 }
 function ssWrite(o){
   try{ localStorage.setItem(SS_KEY, JSON.stringify(o)); }catch(e){}
@@ -924,11 +955,12 @@ function ssGetHomeY(){
 }
 function ssRestoreView(){
   var o = ssRead();
-  if(!location.hash && o.hash){
+  if(!location.hash && o && o.hash){
     var h = o.hash;
-    // 只恢复真正的子视图（#/words/slug、#/pods/source、#/books/...），
-    // 忽略主页锚点导航（如 #/words、#/pods、#/books），避免每次打开被滚到主页某区块
-    if(h !== '#/' && /^#\/(words|pods|books)\//.test(h)){ location.hash = h; }
+    // 恢复站内 hash：二级视图（#/words/slug、#/pods/source、#/books/...）与
+    // 主页区块锚点（#/words、#/pods、#/books）都恢复，离开时在哪就在哪；
+    // 无效路由由 render() 优雅回落主页；纯主页（#/、#、空）无需恢复。
+    if(h.charAt(0) === '#' && h !== '#/' && h !== '#'){ location.hash = h; }
   }
 }
 

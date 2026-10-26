@@ -1873,9 +1873,26 @@ ssRestoreView();
         var audio = new Audio(url);
         currentAudio = audio;
         audio.onended = function(){ try{ URL.revokeObjectURL(url); }catch(e){} currentAudio = null; done(); };
-        audio.onerror = function(){ try{ URL.revokeObjectURL(url); }catch(e){} currentAudio = null; speakBrowser(); };
-        audio.play().catch(function(){ currentAudio = null; speakBrowser(); });
-      }).catch(function(){ if(ttsTimer) clearTimeout(ttsTimer); speakBrowser(); });
+        audio.onerror = function(){ try{ URL.revokeObjectURL(url); }catch(e){} currentAudio = null; done(); };
+        audio.play().catch(function(){
+          // iOS 自动播放被拦：放一个按钮让用户手动点一下播放真人音色
+          currentAudio = null;
+          var chat = document.getElementById('coachChat');
+          if(chat){
+            var btn = document.createElement('button');
+            btn.className = 'cbtn cbtn-ghost';
+            btn.textContent = '🔊 点我听';
+            btn.style.marginLeft = '8px';
+            btn.onclick = function(){
+              btn.remove();
+              currentAudio = audio;
+              audio.play().then(done).catch(function(){ done(); });
+            };
+            chat.appendChild(btn);
+            chat.scrollTop = chat.scrollHeight;
+          }
+        });
+      }).catch(function(){ if(ttsTimer) clearTimeout(ttsTimer); done(); });
     } else {
       speakBrowser();
     }

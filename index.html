@@ -1397,16 +1397,16 @@ ssRestoreView();
   var handsFree = false, abortCtrl = null, currentAudio = null, travelerId = null;
   var requestId = 0;  // 跟踪请求：切换角色时旧请求回调直接丢弃
 
-  /* 可选英文音色（Edge TTS 微软免费语音） */
+  /* 可选英文音色（Cloudflare AI Deepgram Aura-2 免费语音） */
   var VOICES = [
-    { id:'en-US-AriaNeural',       name:'Aria · 温柔女声', speed:1.0, g:'女声' },
-    { id:'en-US-JennyNeural',      name:'Jenny · 客服女声', speed:1.0, g:'女声' },
-    { id:'en-US-EmmaNeural',       name:'Emma · 年轻女声', speed:1.0, g:'女声' },
-    { id:'en-US-MichelleNeural',   name:'Michelle · 成熟女声', speed:1.0, g:'女声' },
-    { id:'en-US-GuyNeural',        name:'Guy · 沉稳男声', speed:0.95, g:'男声' },
-    { id:'en-US-DavisNeural',      name:'Davis · 年轻男声', speed:1.0, g:'男声' },
-    { id:'en-US-AndrewNeural',     name:'Andrew · 通用男声', speed:1.0, g:'男声' },
-    { id:'en-US-BrianNeural',      name:'Brian · 低沉男声', speed:0.95, g:'男声' }
+    { id:'luna',        name:'Luna · 温柔女声', speed:1.0, g:'女声' },
+    { id:'asteria',     name:'Asteria · 活泼女声', speed:1.0, g:'女声' },
+    { id:'athena',      name:'Athena · 成熟女声', speed:1.0, g:'女声' },
+    { id:'cora',        name:'Cora · 年轻女声', speed:1.0, g:'女声' },
+    { id:'apollo',      name:'Apollo · 沉稳男声', speed:0.95, g:'男声' },
+    { id:'arcas',       name:'Arcas · 年轻男声', speed:1.0, g:'男声' },
+    { id:'hermes',      name:'Hermes · 通用男声', speed:1.0, g:'男声' },
+    { id:'jupiter',     name:'Jupiter · 低沉男声', speed:0.95, g:'男声' }
   ];
   function getUserVoice(role){
     try{

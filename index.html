@@ -1397,20 +1397,16 @@ ssRestoreView();
   var handsFree = false, abortCtrl = null, currentAudio = null, travelerId = null;
   var requestId = 0;  // 跟踪请求：切换角色时旧请求回调直接丢弃
 
-  /* 可选英文音色（seed-tts-2.0 uranus_bigtts） */
+  /* 可选英文音色（Edge TTS 微软免费语音） */
   var VOICES = [
-    { id:'en_female_dacey_uranus_bigtts',    name:'Dacey · 温柔女声', speed:1.0, g:'女声' },
-    { id:'en_female_stokie_uranus_bigtts',   name:'Stokie · 活泼女声', speed:1.0, g:'女声' },
-    { id:'en_female_jenny_uranus_bigtts',    name:'Jenny · 客服女声', speed:1.0, g:'女声' },
-    { id:'en_female_female_tutor_ms-jenny_uranus_bigtts', name:'Holly · 教学女声', speed:1.0, g:'女声' },
-    { id:'en_male_tim_uranus_bigtts',        name:'Tim · 沉稳男声', speed:0.95, g:'男声' },
-    { id:'en_male_alex_uranus_bigtts',       name:'Alex · 年轻男声', speed:1.0, g:'男声' },
-    { id:'en_male_jamie_uranus_bigtts',      name:'Jamie · 通用男声', speed:1.0, g:'男声' },
-    { id:'en_male_jimmy_uranus_bigtts',      name:'Jimmy · 配音男声', speed:1.0, g:'男声' },
-    { id:'en_male_hades_uranus_bigtts',      name:'Beau · 低沉男声', speed:0.95, g:'男声' },
-    { id:'en_male_ronald_uranus_bigtts',     name:'Ronald · 朗读男声', speed:1.0, g:'男声' },
-    { id:'en_male_kevin_uranus_bigtts',      name:'Kevin · 教学男声', speed:1.0, g:'男声' },
-    { id:'en_male_michael_uranus_bigtts',    name:'Hank · 通用男声', speed:1.0, g:'男声' }
+    { id:'en-US-AriaNeural',       name:'Aria · 温柔女声', speed:1.0, g:'女声' },
+    { id:'en-US-JennyNeural',      name:'Jenny · 客服女声', speed:1.0, g:'女声' },
+    { id:'en-US-EmmaNeural',       name:'Emma · 年轻女声', speed:1.0, g:'女声' },
+    { id:'en-US-MichelleNeural',   name:'Michelle · 成熟女声', speed:1.0, g:'女声' },
+    { id:'en-US-GuyNeural',        name:'Guy · 沉稳男声', speed:0.95, g:'男声' },
+    { id:'en-US-DavisNeural',      name:'Davis · 年轻男声', speed:1.0, g:'男声' },
+    { id:'en-US-AndrewNeural',     name:'Andrew · 通用男声', speed:1.0, g:'男声' },
+    { id:'en-US-BrianNeural',      name:'Brian · 低沉男声', speed:0.95, g:'男声' }
   ];
   function getUserVoice(role){
     try{
@@ -2177,30 +2173,24 @@ ssRestoreView();
           if(e.results[i].isFinal) finalText += t + ' '; else interim = t;
         }
         clearTimeout(silenceTimer);
-        if(aiBusy){
-          var f = finalText.trim();
-          if(f){
-            if(lastAIText && lastAIText.indexOf(f) >= 0){ finalText = ''; }
-            else { finalText = ''; coachSend(f); }
-          }
-          var el = document.getElementById('coachVoice');
-          if(el) el.textContent = '🔊 ' + (interim.trim() || '…');
-          return;
-        }
+        // 把识别结果实时放到输入框里，用户确认后再发送
+        var inp = document.getElementById('coachText');
+        if(inp) inp.value = (finalText + interim).trim();
         silenceTimer = setTimeout(function(){
-          var t = finalText.trim();
-          if(t){ finalText = ''; coachSend(t); }
-          else {
-            var vel = document.getElementById('coachVoice');
-            if(vel && micOn) vel.textContent = '🎙️ 没听清，试试打字或靠近麦克风';
-          }
-          // 静音3秒后自动停
           stopListening();
           var hb = document.getElementById('coachHands');
           if(hb){ hb.classList.remove('active'); hb.textContent = '🎤'; }
+          var inp2 = document.getElementById('coachText');
+          if(inp2 && inp2.value.trim()){
+            inp2.focus();
+            toast('识别完成，确认后点发送');
+          } else {
+            var vel = document.getElementById('coachVoice');
+            if(vel) vel.textContent = '🎙️ 没听清，试试打字或靠近麦克风';
+          }
         }, 3000);
         var el = document.getElementById('coachVoice');
-        if(el) el.textContent = (finalText + interim).trim();
+        if(el) el.textContent = '🎙️ 正在听…';
       };
       rec.onend = function(){
         // 手动模式：不自动重启，等用户再点麦克风
@@ -2388,6 +2378,74 @@ ssRestoreView();
     });
   }
 
+  /* ---- 备份/恢复面板 ---- */
+  function openBackupPanel(){
+    var old = document.getElementById('backupPanel');
+    if(old) old.remove();
+    var wrap = document.createElement('div');
+    wrap.className = 'rel-mask';
+    wrap.id = 'backupPanel';
+    wrap.innerHTML = '<div class="rel-panel">'
+      + '<div class="rel-head"><strong>💾 AI 语伴数据备份/恢复</strong><button class="cbtn cbtn-ghost" id="backupClose">✕</button></div>'
+      + '<p class="rel-hint">导出所有语伴的对话历史、长期记忆、关系档案、音色设置，存到手机里。换手机或重装浏览器后，可以导入恢复。</p>'
+      + '<div class="rel-actions" style="justify-content:space-between;">'
+      + '<button class="cbtn" id="backupExport">📤 导出数据</button>'
+      + '<button class="cbtn cbtn-ghost" id="backupImport">📥 导入数据</button>'
+      + '<input type="file" id="backupFile" accept=".json" style="display:none;" />'
+      + '</div>'
+      + '<p class="rel-hint" style="margin-top:12px;">⚠️ 数据存在手机浏览器本地，清缓存会丢。建议定期导出备份。</p>'
+      + '</div>';
+    document.body.appendChild(wrap);
+    function close(){ wrap.remove(); }
+    document.getElementById('backupClose').addEventListener('click', close);
+    document.getElementById('backupExport').addEventListener('click', function(){
+      var data = { version: 1, exportDate: new Date().toISOString(), roles: {} };
+      // 收集所有语伴的数据
+      var roles = ['nicole','mike','stan','traveler','ahmet','otis'];
+      roles.forEach(function(r){
+        data.roles[r] = {
+          history: loadHist(r),
+          memory: loadMem(r),
+          relationship: getRel(r)
+        };
+      });
+      data.voices = JSON.parse(localStorage.getItem('coach_voices') || '{}');
+      var blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = '轻学英语_AI语伴备份_' + new Date().toISOString().slice(0,10) + '.json';
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast('备份文件已导出，请保存到手机里');
+    });
+    document.getElementById('backupImport').addEventListener('click', function(){
+      document.getElementById('backupFile').click();
+    });
+    document.getElementById('backupFile').addEventListener('change', function(e){
+      var file = e.target.files[0];
+      if(!file) return;
+      var reader = new FileReader();
+      reader.onload = function(ev){
+        try{
+          var data = JSON.parse(ev.target.result);
+          if(!data.roles) throw new Error('格式不对');
+          Object.keys(data.roles).forEach(function(r){
+            var d = data.roles[r];
+            if(d.history) try{ localStorage.setItem(histKey(r), JSON.stringify(d.history)); }catch(e){}
+            if(d.memory) try{ localStorage.setItem(memKey(r), JSON.stringify(d.memory)); }catch(e){}
+            if(d.relationship) try{ localStorage.setItem(relKey(r), d.relationship); }catch(e){}
+          });
+          if(data.voices) try{ localStorage.setItem('coach_voices', JSON.stringify(data.voices)); }catch(e){}
+          toast('导入成功！刷新页面后生效');
+          close();
+        }catch(err){
+          toast('导入失败：文件格式不对');
+        }
+      };
+      reader.readAsText(file);
+    });
+  }
+
   /* ---- 关系档案面板 ---- */
   function openRelPanel(){
     var c = companion(state.role);
@@ -2402,7 +2460,9 @@ ssRestoreView();
       + '<textarea id="relText" rows="6" placeholder="例如：见过 2 次、还没合作、印象不错…">' + esc(getRel(state.role)) + '</textarea>'
       + '<div class="rel-actions"><button class="cbtn" id="relSave">保存</button><button class="cbtn cbtn-ghost" id="relReset">恢复默认</button></div>'
       + '<div class="rel-mem"><div class="rel-mem-head">🧠 长期记忆（Ta 从你跨会话说的话里自动记下的）<button class="cbtn cbtn-ghost" id="memClear">清空记忆</button></div>'
-      + '<div class="rel-mem-list">' + (loadMem(state.role).length ? loadMem(state.role).map(function(s){ return '<div class="rel-mem-item">' + esc(s) + '</div>'; }).join('') : '<div class="rel-mem-item rel-mem-empty">还没有记忆。聊几句自我介绍，Ta 就会记住并之后引用。</div>') + '</div></div>'
+      + '<div class="rel-mem-list">' + (loadMem(state.role).length ? loadMem(state.role).map(function(s, i){ return '<div class="rel-mem-item" data-mem-idx="' + i + '">' + esc(s) + ' <button class="mem-del" data-mem-idx="' + i + '" style="float:right;border:none;background:none;color:#e53935;cursor:pointer;padding:0 4px;">✕</button></div>'; }).join('') : '<div class="rel-mem-item rel-mem-empty">还没有记忆。聊几句自我介绍，Ta 就会记住并之后引用。</div>') + '</div></div>'
+      + '<div class="rel-mem"><div class="rel-mem-head">💬 对话历史<button class="cbtn cbtn-ghost" id="chatExport">导出对话</button><button class="cbtn cbtn-ghost" id="chatClear" style="margin-left:6px;">清空对话</button></div>'
+      + '<div class="rel-mem-list" style="max-height:80px;"><div class="rel-mem-item rel-mem-empty">当前共 ' + state.history.length + ' 条消息（含你和' + c.name + '的对话）</div></div></div>'
       + '</div>';
     document.body.appendChild(wrap);
     var onEsc = function(ev){ if(ev.key === 'Escape'){ close(); } };
@@ -2422,6 +2482,48 @@ ssRestoreView();
       clearMem(state.role); toast('已清空这个语伴的记忆'); 
       var list = document.querySelector('#relPanel .rel-mem-list');
       if(list) list.innerHTML = '<div class="rel-mem-item rel-mem-empty">还没有记忆。聊几句自我介绍，Ta 就会记住并之后引用。</div>';
+    });
+    // 删除单条记忆
+    wrap.querySelectorAll('.mem-del').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var idx = parseInt(btn.getAttribute('data-mem-idx'), 10);
+        var mem = loadMem(state.role);
+        if(idx >= 0 && idx < mem.length){
+          mem.splice(idx, 1);
+          try{ localStorage.setItem(memKey(state.role), JSON.stringify(mem)); }catch(e){}
+          btn.parentElement.remove();
+          if(!mem.length){
+            var list = document.querySelector('#relPanel .rel-mem-list');
+            if(list) list.innerHTML = '<div class="rel-mem-item rel-mem-empty">还没有记忆。聊几句自我介绍，Ta 就会记住并之后引用。</div>';
+          }
+          toast('已删除这条记忆');
+        }
+      });
+    });
+    var chatExport = document.getElementById('chatExport');
+    if(chatExport) chatExport.addEventListener('click', function(){
+      var lines = ['=== 与 ' + c.name + ' 的对话记录 ===', ''];
+      state.history.forEach(function(m){
+        lines.push((m.role === 'user' ? '我' : c.name) + ': ' + m.content);
+      });
+      var blob = new Blob([lines.join('\n')], {type: 'text/plain;charset=utf-8'});
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = '对话记录_' + state.role + '.txt';
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast('对话记录已导出');
+    });
+    var chatClear = document.getElementById('chatClear');
+    if(chatClear) chatClear.addEventListener('click', function(){
+      if(confirm('确定要清空和这个语伴的所有对话历史吗？此操作不可恢复。')){
+        state.history = [];
+        persistSession();
+        try{ localStorage.removeItem(histKey(state.role)); }catch(e){}
+        rebuildChat();
+        toast('对话历史已清空');
+        close();
+      }
     });
   }
 
@@ -2496,6 +2598,7 @@ ssRestoreView();
       + '.coach-input{display:flex;gap:8px;align-items:center}'
       + '.coach-input input{flex:1;padding:11px 12px;border:1px solid var(--hair);border-radius:10px;background:var(--surface);color:var(--ink);outline:none}'
       + '.coach-input input:focus{border-color:var(--accent)}'
+      + '.mic-btn{font-size:15px;font-weight:600;min-width:72px;padding:11px 14px;white-space:nowrap}'
       + '.coach-stats{font-size:12px;color:var(--faint);margin-top:2px}'
       + '.coach-loaded{font-size:12px;color:var(--faint);margin:2px 0 6px}'
       + '.coach-actions{display:flex;gap:6px;flex-wrap:wrap;align-items:center}'
@@ -2527,6 +2630,7 @@ ssRestoreView();
       +     '<button class="cbtn' + (state.auto?' active':'') + '" id="coachAuto">' + (state.auto?'✨ 自动匹配':'📌 手动选话题') + '</button>'
       +     '<button class="cbtn cbtn-ghost" id="coachRel">📋 关系档案</button>'
       +     '<button class="cbtn cbtn-ghost" id="coachVoicePicker">🎙️ 音色</button>'
+      +     '<button class="cbtn cbtn-ghost" id="coachBackup">💾 备份/恢复</button>'
       +   '</div>'
       +   '<div class="tgroup"><div class="tgroup-name">生活话题</div><div class="ctopic-row">' + lifeHtml + '</div></div>'
       +   '<div id="coachTopics">' + buildTopicGroups(state.role) + '</div>'
@@ -2541,8 +2645,8 @@ ssRestoreView();
       +     '<button class="cbtn cbtn-ghost" id="coachReplay" title="再听一遍 AI 刚才的话，跟着读">🔊 再听一遍</button>'
       +   '</div>'
       +   '<div class="coach-input">'
-      +     '<button class="cbtn" id="coachHands" title="点一下开始说话，说完或10秒无声音自动停">🎤</button>'
-      +     '<input id="coachText" placeholder="或直接打字（可中英混输），Enter 发送" />'
+      +     '<button class="cbtn mic-btn" id="coachHands" title="点一下开始说话，说完3秒后自动停">🎤 说话</button>'
+      +     '<input id="coachText" placeholder="打字或语音识别后确认，Enter 发送" />'
       +     '<button class="cbtn" id="coachSend">发送</button>'
       +   '</div>'
       +   '<div class="ctip" id="coachTip"></div>'
@@ -2569,6 +2673,8 @@ ssRestoreView();
     document.getElementById('coachHands').addEventListener('click', toggleHandsFree);
     document.getElementById('coachAuto').addEventListener('click', toggleAuto);
     document.getElementById('coachRel').addEventListener('click', openRelPanel);
+    var backupBtn = document.getElementById('coachBackup');
+    if(backupBtn) backupBtn.addEventListener('click', openBackupPanel);
     var hintBtn = document.getElementById('coachHint');
     if(hintBtn) hintBtn.addEventListener('click', coachHint);
     var reBtn = document.getElementById('coachRehear'); if(reBtn) reBtn.addEventListener('click', coachRehear);

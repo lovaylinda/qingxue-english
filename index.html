@@ -1394,7 +1394,28 @@ ssRestoreView();
 
   var state = { role:'nicole', topics:['通用日常'], auto:true, history:[], tipSeen:{}, rel:{} };
   var rec = null, finalText = '', silenceTimer = null, micOn = false, aiBusy = false, lastAIText = '', ttsOn = true;
-  var handsFree = true, abortCtrl = null, currentAudio = null, travelerId = null;
+  var handsFree = false, abortCtrl = null, currentAudio = null, travelerId = null;
+
+  /* 可选英文音色（seed-tts-2.0 uranus_bigtts） */
+  var VOICES = [
+    { id:'en_female_dacey_uranus_bigtts', name:'Dacey · 温柔女声', speed:1.0 },
+    { id:'en_female_stokie_uranus_bigtts', name:'Stokie · 活泼女声', speed:1.0 },
+    { id:'en_male_tim_uranus_bigtts',     name:'Tim · 沉稳男声', speed:0.95 },
+    { id:'en_male_alex_uranus_bigtts',    name:'Alex · 年轻男声', speed:1.0 }
+  ];
+  function getUserVoice(role){
+    try{
+      var saved = JSON.parse(localStorage.getItem('coach_voices') || '{}');
+      return saved[role] || null;
+    }catch(e){ return null; }
+  }
+  function setUserVoice(role, voiceId, speed){
+    try{
+      var saved = JSON.parse(localStorage.getItem('coach_voices') || '{}');
+      saved[role] = { id: voiceId, speed: speed };
+      localStorage.setItem('coach_voices', JSON.stringify(saved));
+    }catch(e){}
+  }
 
   /* ---- 会话续接 + 坚持统计（localStorage） ---- */
   var SESSION_KEY = 'qingxue-coach-session-v1';
@@ -1712,6 +1733,13 @@ ssRestoreView();
     var EP_DLG = window.ENGLISHPOD_DIALOGUES || null;
     var FA_DLG = window.FAMILYALBUM_DIALOGUES || null;
     var chosen = coachPickTopics(userMsg);
+    // 大标签自动展开为子话题用于语料检索（界面上仍只显示你选的那一个）
+    var expanded = [];
+    chosen.forEach(function(t){
+      if(BIG_TAG[t]) expanded = expanded.concat(BIG_TAG[t]);
+      else expanded.push(t);
+    });
+    chosen = expanded;
     var lines = [], tip = null, used = {}, priority = [];
     function useData(name){
       if(used[name]) return; used[name] = 1;
@@ -1855,7 +1883,9 @@ ssRestoreView();
       window.speechSynthesis.speak(u);
     }
     var c = companion(state.role);
-    var voice = c.voice;
+    var uv = getUserVoice(state.role);
+    var voice = uv ? uv.id : c.voice;
+    var speed = uv ? uv.speed : (c.voiceSpeed || 1);
     if(configured && voice && window.fetch){
       var ttsCtrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
       var ttsTimer = ttsCtrl ? setTimeout(function(){ try{ ttsCtrl.abort(); }catch(e){} }, 15000) : null;
@@ -1863,7 +1893,7 @@ ssRestoreView();
       fetch(WORKER_URL + '/tts', {
         method:'POST',
         headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ text: text, voice: voice, speed: c.voiceSpeed || 1 }),
+        body: JSON.stringify({ text: text, voice: voice, speed: speed }),
         signal: ttsCtrl ? ttsCtrl.signal : undefined
       }).then(function(res){
         if(!res.ok) throw new Error('HTTP ' + res.status);
@@ -1875,7 +1905,11 @@ ssRestoreView();
         currentAudio = audio;
         audio.onended = function(){ try{ URL.revokeObjectURL(url); }catch(e){} currentAudio = null; done(); };
         audio.onerror = function(){ try{ URL.revokeObjectURL(url); }catch(e){} currentAudio = null; done(); };
-        audio.play().then(function(){ toast('🔊 正在播放真人音色'); }).catch(function(){
+        audio.play().then(function(){
+          toast('🔊 正在播放真人音色');
+          // AI 说话时关掉麦克风，防止它自己的声音被录进去
+          if(micOn) stopListening();
+        }).catch(function(){
           // iOS 自动播放被拦：放一个按钮让用户手动点一下播放真人音色
           currentAudio = null;
           var chat = document.getElementById('coachChat');
@@ -1887,6 +1921,7 @@ ssRestoreView();
             btn.onclick = function(){
               btn.remove();
               currentAudio = audio;
+              if(micOn) stopListening();
               audio.play().then(done).catch(function(){ done(); });
             };
             chat.appendChild(btn);
@@ -1978,6 +2013,7 @@ ssRestoreView();
   }
   function coachReplay(){
     if(!lastAIText){ toast('还没有可跟读的内容，先让 AI 说一句'); return; }
+    stopCurrentTTS();
     coachSpeak(lastAIText);
   }
   function rebuildChat(){
@@ -1988,7 +2024,10 @@ ssRestoreView();
       var last = state.history[state.history.length - 1];
       lastAIText = (last && last.role === 'assistant') ? last.content : '';
     } else {
-      coachAppend('ai', welcomeFor(state.role)); lastAIText = '';
+      // 不自动发欢迎语，等用户先开口
+      lastAIText = '';
+      var c0 = companion(state.role);
+      coachAppend('ai', '（' + (c0 ? c0.name : 'AI语伴') + ' 在线了，你先说第一句吧）');
     }
     coachAutoScroll();
   }
@@ -2107,11 +2146,9 @@ ssRestoreView();
     if(b){ b.classList.remove('on'); b.textContent = ''; }
   }
   function resumeListening(){
-    if(!handsFree || aiBusy) return;
-    startListening();
+    // 手动模式：AI 说完后不自动恢复监听，等用户自己点麦克风
   }
   function startListening(){
-    if(!handsFree) return;
     if(!window.SpeechRecognition && !window.webkitSpeechRecognition){ return; }
     var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     try{
@@ -2127,7 +2164,6 @@ ssRestoreView();
         }
         clearTimeout(silenceTimer);
         if(aiBusy){
-          // AI 正在说话：若用户开口且不是复述 AI 自己的话，则打断
           var f = finalText.trim();
           if(f){
             if(lastAIText && lastAIText.indexOf(f) >= 0){ finalText = ''; }
@@ -2142,31 +2178,34 @@ ssRestoreView();
           if(t){ finalText = ''; coachSend(t); }
           else {
             var vel = document.getElementById('coachVoice');
-            if(vel && handsFree && micOn) vel.textContent = '🎙️ 没听清，试试打字或靠近麦克风';
+            if(vel && micOn) vel.textContent = '🎙️ 没听清，试试打字或靠近麦克风';
           }
+          // 静音10秒后自动停
+          stopListening();
+          var hb = document.getElementById('coachHands');
+          if(hb){ hb.classList.remove('active'); hb.textContent = '🎤 点我说话'; }
         }, 10000);
         var el = document.getElementById('coachVoice');
         if(el) el.textContent = (finalText + interim).trim();
       };
       rec.onend = function(){
-        // 常驻续听：未手动停、未在 AI 说话期间被发消息打断时，自动重启
-        if(handsFree && micOn && !aiBusy){ try{ rec.start(); }catch(e){} }
+        // 手动模式：不自动重启，等用户再点麦克风
       };
       rec.onerror = function(ev){
         if(ev.error === 'not-allowed'){ stopListening(); toast('没有麦克风权限'); }
-        else if(ev.error === 'no-speech'){ /* 忽略 */ }
-        else if(ev.error !== 'aborted'){ if(micOn) try{ rec.start(); }catch(e){} }
       };
       rec.start();
       micOn = true;
     }catch(e){ micOn = false; }
   }
   function toggleHandsFree(){
-    handsFree = !handsFree;
-    if(handsFree){ startListening(); }
-    else { stopListening(); stopCurrentTTS(); }
+    if(micOn){ stopListening(); }
+    else {
+      if(aiBusy){ toast('等AI说完再说'); return; }
+      startListening();
+    }
     var b = document.getElementById('coachHands');
-    if(b){ b.classList.toggle('active', handsFree); b.textContent = handsFree ? '🎤 免提已开' : '🎤 免提已关'; }
+    if(b){ b.classList.toggle('active', micOn); b.textContent = micOn ? '🎤 正在听…再点停止' : '🎤 点我说话'; }
   }
 
   /* ---- 话题标签渲染（多选 + EnglishPod 场景可搜索） ---- */
@@ -2217,23 +2256,10 @@ ssRestoreView();
     });
   }
   function coachToggleTopic(t){
-    var subs = BIG_TAG[t];
-    if(subs){
-      // 大标签：展开为其全部子话题；再次点击收起
-      var allOn = subs.every(function(s){ return state.topics.indexOf(s) >= 0; });
-      var target = state.topics.filter(function(x){ return subs.indexOf(x) < 0; });
-      if(!allOn) subs.forEach(function(s){ if(target.indexOf(s) < 0) target.push(s); });
-      if(!target.length) target.push('通用日常');
-      state.topics = target;
-      ensureDialogue(target.slice()).then(updateDialogueStatus);
-      syncTopicChips();
-      persistSession();
-      return;
-    }
+    // 大标签小标签一视同仁：点哪个选哪个，不自动带出子话题，不强制保留
     var idx = state.topics.indexOf(t);
     if(idx >= 0){ state.topics.splice(idx,1); }
     else { state.topics.push(t); ensureDialogue([t]).then(updateDialogueStatus); }
-    if(!state.topics.length) state.topics.push('通用日常');
     syncTopicChips();
     persistSession();
   }
@@ -2282,6 +2308,43 @@ ssRestoreView();
       otis: 'Hey, partner. Ready to talk shop — or something else?'
     };
     return w[role] || ('Hey, good to see you. What shall we talk about?');
+  }
+
+  /* ---- 音色选择器 ---- */
+  function openVoicePicker(){
+    var old = document.getElementById('voicePanel');
+    if(old){ old.remove(); return; }
+    var c = companion(state.role);
+    var uv = getUserVoice(state.role);
+    var currentId = uv ? uv.id : c.voice;
+    var panel = document.createElement('div');
+    panel.id = 'voicePanel';
+    panel.className = 'rel-mask';
+    var items = VOICES.map(function(v){
+      var on = (v.id === currentId);
+      return '<div class="rel-panel-row">'
+        + '<button class="cbtn cbtn-ghost" data-voice-id="' + v.id + '" data-voice-speed="' + v.speed + '" style="flex:1;text-align:left;">'
+        + (on ? '✅ ' : '') + esc(v.name)
+        + '</button></div>';
+    }).join('');
+    panel.innerHTML = '<div class="rel-panel" style="max-width:380px;">'
+      + '<div class="rel-head"><strong>🎙️ 给「' + esc(c.name) + '」选个声音</strong><button class="cbtn cbtn-ghost" id="vpClose">✕</button></div>'
+      + '<p class="rel-hint">选好后固定保存，下次切换角色也记得。点一下试听。</p>'
+      + items
+      + '</div>';
+    document.body.appendChild(panel);
+    document.getElementById('vpClose').addEventListener('click', function(){ panel.remove(); });
+    panel.addEventListener('click', function(e){
+      var b = e.target.closest ? e.target.closest('[data-voice-id]') : null;
+      if(!b) return;
+      var vid = b.getAttribute('data-voice-id');
+      var vspd = parseFloat(b.getAttribute('data-voice-speed')) || 1;
+      setUserVoice(state.role, vid, vspd);
+      toast('已保存，跟' + c.name + '说话时会用这个声音');
+      panel.remove();
+      // 试听
+      coachSpeak('Hey! This is how I sound now.', function(){});
+    });
   }
 
   /* ---- 关系档案面板 ---- */
@@ -2420,10 +2483,11 @@ ssRestoreView();
       +   '<div class="coach-stats" id="coachStats"></div>'
       +   '<div class="crole-row" id="coachRoles">' + rolesHtml + '</div>'
       +   '<div class="coach-bar">'
-      +     '<button class="cbtn' + (handsFree?' active':'') + '" id="coachHands">' + (handsFree?'🎤 免提已开':'🎤 免提已关') + '</button>'
+      +     '<button class="cbtn" id="coachHands">🎤 点我说话</button>'
       +     '<button class="cbtn' + (state.auto?' active':'') + '" id="coachAuto">' + (state.auto?'✨ 自动匹配':'📌 手动选话题') + '</button>'
       +     '<button class="cbtn cbtn-ghost" id="coachRel">📋 关系档案</button>'
-      +     '<span class="crole-hint">免提：AI 说话后自动重新听，随时开口即可打断</span>'
+      +     '<button class="cbtn cbtn-ghost" id="coachVoicePicker">🎙️ 音色</button>'
+      +     '<span class="crole-hint">点麦克风按钮说话，说完自动停（10秒无声音也自动停）</span>'
       +   '</div>'
       +   '<div class="tgroup"><div class="tgroup-name">生活话题</div><div class="ctopic-row">' + lifeHtml + '</div></div>'
       +   '<div id="coachTopics">' + buildTopicGroups(state.role) + '</div>'
@@ -2470,6 +2534,8 @@ ssRestoreView();
     var reBtn = document.getElementById('coachRehear'); if(reBtn) reBtn.addEventListener('click', coachRehear);
     var rtBtn = document.getElementById('coachRetract'); if(rtBtn) rtBtn.addEventListener('click', coachRetract);
     var rpBtn = document.getElementById('coachReplay'); if(rpBtn) rpBtn.addEventListener('click', coachReplay);
+    var vpBtn = document.getElementById('coachVoicePicker');
+    if(vpBtn) vpBtn.addEventListener('click', openVoicePicker);
     bindSceneFilter();
 
     // 用代理统一处理所有话题 chips（生活 + 主题 + EnglishPod）；重渲染前先移除旧处理器
@@ -2481,9 +2547,7 @@ ssRestoreView();
       coachToggleTopic(b.getAttribute('data-topic'));
     };
     app.addEventListener('click', app._coachTopicHandler);
-
-    // 免提默认开启
-    if(handsFree) startListening();
+    // 手动模式：不自动启动监听，等用户点麦克风按钮
   };
 
   /* ---- 调试钩子（本地端到端验证用）：暴露自动选话题 / 检索 / 跨源索引 ---- */

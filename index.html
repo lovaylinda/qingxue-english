@@ -2281,20 +2281,29 @@ ssRestoreView();
 
   /* ---- 角色切换 ---- */
   function coachSetRole(r){
-    if(r === state.role) return; // 同一角色重复点击不再清空对话
-    persistSession();            // 先存下当前角色的对话
+    if(r === state.role) return;
+    // 立即停掉上一个角色的所有进行中的请求和音频
+    if(abortCtrl){ try{ abortCtrl.abort(); }catch(e){} abortCtrl = null; }
+    stopCurrentTTS();
+    stopListening();
+    // 清空输入框，避免上一个角色没发的话跑到新角色
+    var inp = document.getElementById('coachText');
+    if(inp) inp.value = '';
+    aiBusy = false;
+    persistSession();
     state.role = r;
-    state.history = loadHist(r); // 恢复该角色上次的对话（没有则从欢迎语开始）
+    state.history = loadHist(r);
     persistSession();
     document.querySelectorAll('#coachRoles button').forEach(function(b){
       b.classList.toggle('active', b.getAttribute('data-role') === r);
     });
-    // 重渲染话题排序 + 欢迎语
     var topicsBox = document.getElementById('coachTopics');
     if(topicsBox){ topicsBox.innerHTML = buildTopicGroups(r) + '<div class="tgroup"><div class="tgroup-name">EnglishPod 场景</div><div class="cscene-search"><input id="sceneFilter" placeholder="搜索 365 个场景（如 Difficult Customer / hotel / job）" /><div class="ctopic-row" id="sceneChips">' + buildSceneChips('').html + '</div></div></div>'; }
     syncTopicChips();
     bindSceneFilter();
     resetChatUI();
+    var c = companion(r);
+    toast('已切换到 ' + (c ? c.name : r) + '，你说第一句吧');
   }
 
   function resetChatUI(){
@@ -2325,36 +2334,49 @@ ssRestoreView();
     var c = companion(state.role);
     var uv = getUserVoice(state.role);
     var currentId = uv ? uv.id : c.voice;
+    var pickedId = currentId, pickedSpeed = uv ? uv.speed : (c.voiceSpeed || 1);
     var panel = document.createElement('div');
     panel.id = 'voicePanel';
     panel.className = 'rel-mask';
-    var items = '';
-    ['女声','男声'].forEach(function(g){
-      items += '<div style="margin:8px 0 4px;font-size:12px;opacity:.6;">' + g + '</div>';
-      VOICES.filter(function(v){ return v.g === g; }).forEach(function(v){
-        var on = (v.id === currentId);
-        items += '<div class="rel-panel-row">'
-          + '<button class="cbtn cbtn-ghost" data-voice-id="' + v.id + '" data-voice-speed="' + v.speed + '" style="flex:1;text-align:left;">'
-          + (on ? '✅ ' : '') + esc(v.name)
-          + '</button></div>';
+    function renderItems(){
+      var items = '';
+      ['女声','男声'].forEach(function(g){
+        items += '<div style="margin:8px 0 4px;font-size:12px;opacity:.6;">' + g + '</div>';
+        VOICES.filter(function(v){ return v.g === g; }).forEach(function(v){
+          var on = (v.id === pickedId);
+          items += '<div class="rel-panel-row">'
+            + '<button class="cbtn cbtn-ghost" data-voice-id="' + v.id + '" data-voice-speed="' + v.speed + '" style="flex:1;text-align:left;">'
+            + (on ? '✅ ' : '○ ') + esc(v.name)
+            + '</button></div>';
+        });
       });
-    });
+      return items;
+    }
+    function refresh(){
+      panel.querySelector('.vp-items').innerHTML = renderItems();
+    }
     panel.innerHTML = '<div class="rel-panel" style="max-width:380px;">'
       + '<div class="rel-head"><strong>🎙️ 给「' + esc(c.name) + '」选个声音</strong><button class="cbtn cbtn-ghost" id="vpClose">✕</button></div>'
-      + '<p class="rel-hint">选好后固定保存，下次切换角色也记得。点一下试听。</p>'
-      + items
+      + '<p class="rel-hint">先点选你喜欢的音色，再点底部保存按钮。</p>'
+      + '<div class="vp-items">' + renderItems() + '</div>'
+      + '<div style="margin-top:12px;text-align:center;">'
+      + '<button class="cbtn" id="vpSave" style="background:#4f46e5;color:#fff;padding:8px 24px;border-radius:8px;">✅ 保存并试听</button>'
+      + '</div>'
       + '</div>';
     document.body.appendChild(panel);
     document.getElementById('vpClose').addEventListener('click', function(){ panel.remove(); });
     panel.addEventListener('click', function(e){
       var b = e.target.closest ? e.target.closest('[data-voice-id]') : null;
-      if(!b) return;
-      var vid = b.getAttribute('data-voice-id');
-      var vspd = parseFloat(b.getAttribute('data-voice-speed')) || 1;
-      setUserVoice(state.role, vid, vspd);
+      if(b){
+        pickedId = b.getAttribute('data-voice-id');
+        pickedSpeed = parseFloat(b.getAttribute('data-voice-speed')) || 1;
+        refresh();
+      }
+    });
+    document.getElementById('vpSave').addEventListener('click', function(){
+      setUserVoice(state.role, pickedId, pickedSpeed);
       toast('已保存，跟' + c.name + '说话时会用这个声音');
       panel.remove();
-      // 试听
       coachSpeak('Hey! This is how I sound now.', function(){});
     });
   }
@@ -2495,11 +2517,9 @@ ssRestoreView();
       +   '<div class="coach-stats" id="coachStats"></div>'
       +   '<div class="crole-row" id="coachRoles">' + rolesHtml + '</div>'
       +   '<div class="coach-bar">'
-      +     '<button class="cbtn" id="coachHands">🎤 点我说话</button>'
       +     '<button class="cbtn' + (state.auto?' active':'') + '" id="coachAuto">' + (state.auto?'✨ 自动匹配':'📌 手动选话题') + '</button>'
       +     '<button class="cbtn cbtn-ghost" id="coachRel">📋 关系档案</button>'
       +     '<button class="cbtn cbtn-ghost" id="coachVoicePicker">🎙️ 音色</button>'
-      +     '<span class="crole-hint">点麦克风按钮说话，说完自动停（10秒无声音也自动停）</span>'
       +   '</div>'
       +   '<div class="tgroup"><div class="tgroup-name">生活话题</div><div class="ctopic-row">' + lifeHtml + '</div></div>'
       +   '<div id="coachTopics">' + buildTopicGroups(state.role) + '</div>'
@@ -2514,6 +2534,7 @@ ssRestoreView();
       +     '<button class="cbtn cbtn-ghost" id="coachReplay" title="再听一遍 AI 刚才的话，跟着读">🔊 再听一遍</button>'
       +   '</div>'
       +   '<div class="coach-input">'
+      +     '<button class="cbtn" id="coachHands" title="点一下开始说话，说完或10秒无声音自动停">🎤</button>'
       +     '<input id="coachText" placeholder="或直接打字（可中英混输），Enter 发送" />'
       +     '<button class="cbtn" id="coachSend">发送</button>'
       +   '</div>'

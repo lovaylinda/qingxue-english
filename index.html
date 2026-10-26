@@ -1475,7 +1475,7 @@ ssRestoreView();
   }
 
   /* ---- 长期记忆：从用户每次发言抽取"自我陈述"持久化，跨会话让语伴记得 ---- */
-  var MEM_LIMIT = 15;
+  var MEM_LIMIT = 28;
   function memKey(role){ return 'qingxue-coach-mem-' + role; }
   function loadMem(role){
     try{ var a = JSON.parse(localStorage.getItem(memKey(role)) || 'null');
@@ -1832,7 +1832,7 @@ ssRestoreView();
     if(!lines.length && !priority.length){ useData('通用日常'); }
     var seenL = {}, chosenLines = [];
     priority.forEach(function(l){ if(!seenL[l]){ seenL[l]=1; chosenLines.push(l); } });
-    if(chosenLines.length > 8){ chosenLines = chosenLines.slice(0, 8); }
+    if(chosenLines.length > 16){ chosenLines = chosenLines.slice(0, 16); }
     var pool = lines.slice();
     while(chosenLines.length < 8 && pool.length){ chosenLines.push(pool.splice(Math.floor(Math.random()*pool.length),1)[0]); }
     while(chosenLines.length < 8 && chosenLines.length < chosenLines.concat(priority.filter(function(l){return !seenL[l];})).length){
@@ -2093,7 +2093,7 @@ ssRestoreView();
         role: state.role,
         systemPrompt: buildSystemPrompt(state.role, ret.hits),
         message: text,
-        history: state.history.slice(-6),
+        history: state.history.slice(-10),
         corpusHits: ret.hits,
         relationship: getRel(state.role)
       }),

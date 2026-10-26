@@ -2099,7 +2099,7 @@ ssRestoreView();
       }),
       signal: abortCtrl.signal
     }).then(function(res){
-      if(!res.ok){ throw new Error('HTTP ' + res.status); }
+      if(!res.ok){ return res.text().then(function(t){ throw new Error('HTTP ' + res.status + (t ? ' · ' + t.slice(0,200) : '')); }); }
       var reader = res.body.getReader(), dec = new TextDecoder(), aiText = '';
       function pump(){
         return reader.read().then(function(r){

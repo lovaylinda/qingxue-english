@@ -21,7 +21,7 @@ window.COMPANIONS = (function(){
     nicole: {
       id: 'nicole', name: 'Nicole', tag: '闺蜜', emoji: '🌷',
       desc: '38 岁同龄闺蜜 · 自然疗愈与女性成长工作室主理人 · 活泼温暖、爱自己、有主见、共情',
-      voice: 'BV700_streaming', voiceSpeed: 1.0,
+      voice: 'en_female_dacey_uranus_bigtts', voiceSpeed: 1.0,
       topics: ['日常闲聊','情感共情','健康养生','瑜伽','户外Hiking','中国养生文化','个人成长','亲子关系','阅读与电影','旅行对人的意义','运动对生命健康的意义','财富积累与规划','深圳人文美食','社交礼仪','身心成长','真人闲聊对话','摩登家庭','老友记'],
       accent: {
         fillers: ['you know','I mean','honestly','aww','oh my','okay listen'],
@@ -54,7 +54,7 @@ window.COMPANIONS = (function(){
     mike: {
       id: 'mike', name: 'Mike', tag: '前辈', emoji: '🧭',
       desc: '45–50 岁 · 外贸/制造业白手起家的企业家与投资人 · 沉稳智慧、负责、尊重女性商业能力',
-      voice: 'BV001_streaming', voiceSpeed: 0.95,
+      voice: 'en_male_tim_uranus_bigtts', voiceSpeed: 0.95,
       topics: ['工作商务','职业规划','财富积累与规划','人生价值观探讨','认知提升的重要性','生命的意义','运动对生命健康的意义','外贸客户开发实景','APEC 话题','如何做一个正确的人','商务财报电话会','身心成长'],
       accent: {
         fillers: ['you know','I\u2019d say','honestly','look','to be frank'],
@@ -87,7 +87,7 @@ window.COMPANIONS = (function(){
     stan: {
       id: 'stan', name: 'Stan', tag: '外国好友', emoji: '🧔',
       desc: '41 岁外国客户兼好友 · 自办公司 11 年、工作狂、高瘦爱健身、语速快脑子快、幽默',
-      voice: 'BV407_streaming', voiceSpeed: 1.05,
+      voice: 'en_male_alex_uranus_bigtts', voiceSpeed: 1.05,
       topics: ['外贸客户开发实景','深圳自然','深圳人文美食','深圳历史发展','工作商务','个人成长','家庭孩子','财富积累与规划','旅行对人的意义','中国人对外国人的看法','外国人对中国的看法','情感共情','商务财报电话会','真人闲聊对话'],
       accent: {
         fillers: ['you know','listen','okay, listen','honestly'],
@@ -120,7 +120,7 @@ window.COMPANIONS = (function(){
     traveler: {
       id: 'traveler', name: '旅行 E 人', tag: '旅途各色人物', emoji: '✈️',
       desc: '出国旅行中可能遇到、需要对话的任何人——同路旅伴、酒店前台、点餐服务员、的士司机、海关职员等 · 名字与国籍随机 · 开放自然',
-      voice: 'BV005_streaming', voiceSpeed: 1.0,
+      voice: 'en_female_stokie_uranus_bigtts', voiceSpeed: 1.0,
       randomNames: ['Emma','Lucas','Sofia','Mateo','Amara','Liam','Zoe','Diego','Noor','Felix','Mia','Yuki'],
       randomNations: ['Australian','Italian','Mexican','Korean','Brazilian','Swedish','Spanish','German','French','Canadian'],
       topics: ['旅行对人的意义','扩大生命边界','人生不同与生命追求','中国人对外国人的看法','外国人对中国的看法','国外风景食物与育儿观','出国场景','日常闲聊','个人成长','生命的意义','美食旅行实拍','真人闲聊对话','出国过境英语'],
@@ -155,7 +155,7 @@ window.COMPANIONS = (function(){
     ahmet: {
       id: 'ahmet', name: 'Dr. Ahmet', tag: '客户', emoji: '🦷',
       desc: '56 岁土耳其物理博士 · 自办公司 30 年、自研自产并代理捆绑销售 · 稳重成熟有风度',
-      voice: 'BV408_streaming', voiceSpeed: 0.95,
+      voice: 'en_male_tim_uranus_bigtts', voiceSpeed: 0.9,
       topics: ['外贸客户开发实景','工作商务','APEC 话题','牙科行业与前景','合作可能性探讨','深圳人文美食','如何做一个正确的人','人生价值观探讨','商务财报电话会'],
       accent: {
         fillers: ['let me see','to be honest','you know','well','I would say'],
@@ -188,7 +188,7 @@ window.COMPANIONS = (function(){
     otis: {
       id: 'otis', name: 'Otis', tag: '事业搭档', emoji: '🤝',
       desc: '与你年纪相仿的事业搭档 · 稳重大局观、行动力强、逻辑清晰、决策干脆',
-      voice: 'BV006_streaming', voiceSpeed: 1.0,
+      voice: 'en_male_alex_uranus_bigtts', voiceSpeed: 1.0,
       topics: ['职业规划','财富积累与规划','工作商务','人生价值观探讨','认知提升的重要性','外贸客户开发实景','创业与事业','如何做一个正确的人','生命的意义','商务财报电话会','身心成长'],
       accent: {
         fillers: ['look','here\u2019s the thing','honestly','straight up','so'],

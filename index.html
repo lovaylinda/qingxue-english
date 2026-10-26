@@ -1398,10 +1398,18 @@ ssRestoreView();
 
   /* 可选英文音色（seed-tts-2.0 uranus_bigtts） */
   var VOICES = [
-    { id:'en_female_dacey_uranus_bigtts', name:'Dacey · 温柔女声', speed:1.0 },
-    { id:'en_female_stokie_uranus_bigtts', name:'Stokie · 活泼女声', speed:1.0 },
-    { id:'en_male_tim_uranus_bigtts',     name:'Tim · 沉稳男声', speed:0.95 },
-    { id:'en_male_alex_uranus_bigtts',    name:'Alex · 年轻男声', speed:1.0 }
+    { id:'en_female_dacey_uranus_bigtts',    name:'Dacey · 温柔女声', speed:1.0, g:'女声' },
+    { id:'en_female_stokie_uranus_bigtts',   name:'Stokie · 活泼女声', speed:1.0, g:'女声' },
+    { id:'en_female_jenny_uranus_bigtts',    name:'Jenny · 客服女声', speed:1.0, g:'女声' },
+    { id:'en_female_female_tutor_ms-jenny_uranus_bigtts', name:'Holly · 教学女声', speed:1.0, g:'女声' },
+    { id:'en_male_tim_uranus_bigtts',        name:'Tim · 沉稳男声', speed:0.95, g:'男声' },
+    { id:'en_male_alex_uranus_bigtts',       name:'Alex · 年轻男声', speed:1.0, g:'男声' },
+    { id:'en_male_jamie_uranus_bigtts',      name:'Jamie · 通用男声', speed:1.0, g:'男声' },
+    { id:'en_male_jimmy_uranus_bigtts',      name:'Jimmy · 配音男声', speed:1.0, g:'男声' },
+    { id:'en_male_hades_uranus_bigtts',      name:'Beau · 低沉男声', speed:0.95, g:'男声' },
+    { id:'en_male_ronald_uranus_bigtts',     name:'Ronald · 朗读男声', speed:1.0, g:'男声' },
+    { id:'en_male_kevin_uranus_bigtts',      name:'Kevin · 教学男声', speed:1.0, g:'男声' },
+    { id:'en_male_michael_uranus_bigtts',    name:'Hank · 通用男声', speed:1.0, g:'男声' }
   ];
   function getUserVoice(role){
     try{
@@ -2320,13 +2328,17 @@ ssRestoreView();
     var panel = document.createElement('div');
     panel.id = 'voicePanel';
     panel.className = 'rel-mask';
-    var items = VOICES.map(function(v){
-      var on = (v.id === currentId);
-      return '<div class="rel-panel-row">'
-        + '<button class="cbtn cbtn-ghost" data-voice-id="' + v.id + '" data-voice-speed="' + v.speed + '" style="flex:1;text-align:left;">'
-        + (on ? '✅ ' : '') + esc(v.name)
-        + '</button></div>';
-    }).join('');
+    var items = '';
+    ['女声','男声'].forEach(function(g){
+      items += '<div style="margin:8px 0 4px;font-size:12px;opacity:.6;">' + g + '</div>';
+      VOICES.filter(function(v){ return v.g === g; }).forEach(function(v){
+        var on = (v.id === currentId);
+        items += '<div class="rel-panel-row">'
+          + '<button class="cbtn cbtn-ghost" data-voice-id="' + v.id + '" data-voice-speed="' + v.speed + '" style="flex:1;text-align:left;">'
+          + (on ? '✅ ' : '') + esc(v.name)
+          + '</button></div>';
+      });
+    });
     panel.innerHTML = '<div class="rel-panel" style="max-width:380px;">'
       + '<div class="rel-head"><strong>🎙️ 给「' + esc(c.name) + '」选个声音</strong><button class="cbtn cbtn-ghost" id="vpClose">✕</button></div>'
       + '<p class="rel-hint">选好后固定保存，下次切换角色也记得。点一下试听。</p>'

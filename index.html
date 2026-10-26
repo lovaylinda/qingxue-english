@@ -1858,14 +1858,15 @@ ssRestoreView();
     var voice = c.voice;
     if(configured && voice && window.fetch){
       var ttsCtrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-      var ttsTimer = ttsCtrl ? setTimeout(function(){ try{ ttsCtrl.abort(); }catch(e){} }, 5000) : null;
+      var ttsTimer = ttsCtrl ? setTimeout(function(){ try{ ttsCtrl.abort(); }catch(e){} }, 15000) : null;
+      toast('🎙️ 正在请求真人语音...');
       fetch(WORKER_URL + '/tts', {
         method:'POST',
         headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ text: text, voice: voice, speed: c.voiceSpeed || 1 }),
         signal: ttsCtrl ? ttsCtrl.signal : undefined
       }).then(function(res){
-        if(!res.ok) throw new Error('tts ' + res.status);
+        if(!res.ok) throw new Error('HTTP ' + res.status);
         return res.blob();
       }).then(function(blob){
         if(ttsTimer) clearTimeout(ttsTimer);
@@ -1874,7 +1875,7 @@ ssRestoreView();
         currentAudio = audio;
         audio.onended = function(){ try{ URL.revokeObjectURL(url); }catch(e){} currentAudio = null; done(); };
         audio.onerror = function(){ try{ URL.revokeObjectURL(url); }catch(e){} currentAudio = null; done(); };
-        audio.play().catch(function(){
+        audio.play().then(function(){ toast('🔊 正在播放真人音色'); }).catch(function(){
           // iOS 自动播放被拦：放一个按钮让用户手动点一下播放真人音色
           currentAudio = null;
           var chat = document.getElementById('coachChat');
@@ -1892,8 +1893,13 @@ ssRestoreView();
             chat.scrollTop = chat.scrollHeight;
           }
         });
-      }).catch(function(){ if(ttsTimer) clearTimeout(ttsTimer); done(); });
+      }).catch(function(err){
+        if(ttsTimer) clearTimeout(ttsTimer);
+        toast('⚠️ 语音请求失败: ' + err.message);
+        done();
+      });
     } else {
+      toast('⚠️ TTS未配置: configured=' + configured + ' voice=' + (voice||'空'));
       speakBrowser();
     }
   }
@@ -2138,7 +2144,7 @@ ssRestoreView();
             var vel = document.getElementById('coachVoice');
             if(vel && handsFree && micOn) vel.textContent = '🎙️ 没听清，试试打字或靠近麦克风';
           }
-        }, 1400);
+        }, 10000);
         var el = document.getElementById('coachVoice');
         if(el) el.textContent = (finalText + interim).trim();
       };

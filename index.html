@@ -1871,7 +1871,7 @@ ssRestoreView();
     return body;
   }
 
-  /* ---- 语音输出：优先火山 TTS，失败降级浏览器语音 ---- */
+  /* ---- 语音输出：优先 Cloudflare Deepgram 免费语音，失败降级浏览器语音 ---- */
   function stopCurrentTTS(){
     try{ window.speechSynthesis.cancel(); }catch(e){}
     if(currentAudio){ try{ currentAudio.pause(); }catch(e){} currentAudio = null; }

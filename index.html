@@ -1395,6 +1395,7 @@ ssRestoreView();
   var state = { role:'nicole', topics:['通用日常'], auto:true, history:[], tipSeen:{}, rel:{} };
   var rec = null, finalText = '', silenceTimer = null, micOn = false, aiBusy = false, lastAIText = '', ttsOn = true;
   var handsFree = false, abortCtrl = null, currentAudio = null, travelerId = null;
+  var requestId = 0;  // 跟踪请求：切换角色时旧请求回调直接丢弃
 
   /* 可选英文音色（seed-tts-2.0 uranus_bigtts） */
   var VOICES = [
@@ -2079,9 +2080,11 @@ ssRestoreView();
     remember(state.role, text);      /* 长期记忆：抽取并持久化用户自我陈述 */
     coachAppend('you', text);
     bumpStats(); persistSession(); renderStats();
+    var myReqId = ++requestId;  // 记录本次请求 ID
     var aiBody = coachAppend('ai', '…', 'c-stream');
     var autoPick = state.auto ? coachPickTopics(text) : null;
-    await ensureDialogue(autoPick ? state.topics.concat(autoPick) : state.topics.slice());
+    // 语料后台加载，不阻塞 AI 请求
+    ensureDialogue(autoPick ? state.topics.concat(autoPick) : state.topics.slice());
     updateDialogueStatus();
     var ret = coachRetrieve(state.topics, text);
     if(ret.topics && ret.topics.length && !state.auto) syncTopicChips();
@@ -2104,6 +2107,7 @@ ssRestoreView();
       var reader = res.body.getReader(), dec = new TextDecoder(), aiText = '';
       function pump(){
         return reader.read().then(function(r){
+          if(myReqId !== requestId) { return; }  // 角色已切换，丢弃旧请求
           if(r.done){
             aiBody.classList.remove('c-stream');
             aiBody.textContent = aiText;
@@ -2134,6 +2138,7 @@ ssRestoreView();
       }
       return pump();
     }).catch(function(err){
+      if(myReqId !== requestId) { aiBusy = false; return; }  // 角色已切换，静默丢弃
       if(err.name !== 'AbortError'){
         aiBody.classList.remove('c-stream');
         aiBody.textContent = '（连接失败：' + err.message + '）';
@@ -2284,6 +2289,7 @@ ssRestoreView();
   function coachSetRole(r){
     if(r === state.role) return;
     // 立即停掉上一个角色的所有进行中的请求和音频
+    requestId++;  // 递增请求 ID，旧请求回调直接丢弃
     if(abortCtrl){ try{ abortCtrl.abort(); }catch(e){} abortCtrl = null; }
     stopCurrentTTS();
     stopListening();

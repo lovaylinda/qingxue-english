@@ -2188,11 +2188,11 @@ ssRestoreView();
             var vel = document.getElementById('coachVoice');
             if(vel && micOn) vel.textContent = '🎙️ 没听清，试试打字或靠近麦克风';
           }
-          // 静音10秒后自动停
+          // 静音3秒后自动停
           stopListening();
           var hb = document.getElementById('coachHands');
-          if(hb){ hb.classList.remove('active'); hb.textContent = '🎤 点我说话'; }
-        }, 10000);
+          if(hb){ hb.classList.remove('active'); hb.textContent = '🎤'; }
+        }, 3000);
         var el = document.getElementById('coachVoice');
         if(el) el.textContent = (finalText + interim).trim();
       };

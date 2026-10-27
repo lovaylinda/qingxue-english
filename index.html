@@ -2781,7 +2781,7 @@ ssRestoreView();
   /* ---- 语音输出：Cloudflare Deepgram 真人音色 → 失败降级浏览器语音 ----
      关键点：复用同一个 <audio> 元素。iOS 上只要它被用户手势播放过一次，
      后续由代码调用 play() 就不再被拦，AI 回复可以直接出声，不用每次手点。 */
-  var ttsAudio = null, ttsCache = {}, ttsOrder = [], speakSerial = 0;
+  var ttsAudio = null, ttsCache = {}, ttsOrder = [], speakSerial = 0, speakToken = 0, lastPlayBlocked = false;
   function ttsEl(){
     if(!ttsAudio){ ttsAudio = new Audio(); ttsAudio.preload = 'auto'; }
     return ttsAudio;
@@ -2797,6 +2797,7 @@ ssRestoreView();
   }
   function stopCurrentTTS(){
     speakSerial++;
+    speakToken++;          /* 让逐句播报的队列立刻作废，后面的句子不再出声 */
     try{ window.speechSynthesis.cancel(); }catch(e){}
     if(currentAudio){ try{ currentAudio.pause(); }catch(e){} currentAudio = null; }
   }
@@ -2826,6 +2827,39 @@ ssRestoreView();
       return en[seed % en.length];
     }catch(e){ return null; }
   }
+  /* 屏幕上的文字和「读出来」的文字必须分开：
+     聊天里写 haha / *sigh* / 😄 看着自然，但送进 TTS 会被逐字母念成「哈哈」「星号 sigh 星号」，
+     一听就假。这里只改送给语音引擎的那一份，屏幕上显示的原文一个字都不动。 */
+  function ttsText(t){
+    var s = String(t || '');
+    /* 星号里是「动作」（*laughs*）→ 整个丢掉；是「强调」（*really*）→ 保留词，只去星号 */
+    var ACT = /^(?:laughs?|laughing|lol|sighs?|sighing|smiles?|smiling|giggles?|chuckles?|grins?|pauses?|whispers?|shrugs?|winks?|thinks?|beat)$/i;
+    s = s.replace(/\*([^*\n]{0,50})\*/g, function(_, inner){
+      var w = String(inner || '').trim();
+      return ACT.test(w) ? ' ' : ' ' + w + ' ';
+    });
+    s = s.replace(/\[[^\]\n]{0,50}\]/g, ' ');         // [laughs]
+    s = s.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}]/gu, ' ');
+    /* 笑声/语气词不念出来，换成一个小停顿，比逐字母念「哈-哈」自然得多 */
+    s = s.replace(/\b(?:ha){2,5}\b/gi, ', ');
+    s = s.replace(/\b(?:he){2,5}\b/gi, ', ');
+    s = s.replace(/\baw{1,4}\b/gi, ', ');
+    s = s.replace(/\bmmm+\b/gi, ', ');
+    s = s.replace(/\s*[—–]{1,2}\s*/g, ', ');          // 破折号其实是换气处
+    s = s.replace(/\.{3,}/g, ', ');
+    s = s.replace(/[~～]+/g, ' ');
+    s = s.replace(/\s*&\s*/g, ' and ');
+    s = s.replace(/\s*[·•]\s*/g, ', ');               // 项目符号
+    s = s.replace(/["“”‘’]/g, '');                    // 引号不念
+    s = s.replace(/[ \t]+/g, ' ');
+    s = s.replace(/\s+([,.!?;:])/g, '$1');
+    s = s.replace(/([.!?])\s*[,;:]+/g, '$1');         // "girl!," → "girl!"
+    s = s.replace(/([,.!?;:])\1+/g, '$1');            // "disaster.." → "disaster."
+    s = s.replace(/([.!?])\s*\.+/g, '$1');            // "thank you!." → "thank you!"
+    s = s.replace(/([,;:])\s*(?=[,;:])/g, '');
+    s = s.replace(/^[\s,;:.!?]+/, '').replace(/[\s,;:]+$/, '');
+    return s.trim() || String(t || '').trim();        // 清理过头就退回原文，不能变哑巴
+  }
   function speakBrowser(text, onDone, voiceId, speed){
     var finished = false;
     function done(){ if(finished) return; finished = true; if(onDone) onDone(); }
@@ -2842,14 +2876,23 @@ ssRestoreView();
     window.speechSynthesis.speak(u);
     setTimeout(done, 4000 + text.length * 120);
   }
-  function playTtsUrl(url, onDone){
+  function playTtsUrl(url, onDone, speed, quiet){
     var audio = ttsEl();
     var finished = false;
     function done(){ if(finished) return; finished = true; if(onDone) onDone(); }
     try{ audio.pause(); }catch(e){}
     audio.onended = null; audio.onerror = null;
     audio.src = url;
+    /* 语速在这里生效：云端合成接口不接受 speed 参数，但音频播放可以变速不变调。
+       好处是同一句话换个语速不用重新合成，省额度。 */
+    try{
+      audio.playbackRate = Math.max(0.6, Math.min(1.6, speed || 1));
+      audio.preservesPitch = true;
+      audio.webkitPreservesPitch = true;
+      audio.mozPreservesPitch = true;
+    }catch(e){}
     currentAudio = audio;
+    lastPlayBlocked = false;
     audio.onended = function(){ if(currentAudio === audio) currentAudio = null; done(); };
     audio.onerror = function(){ if(currentAudio === audio) currentAudio = null; done(); };
     var p = audio.play();
@@ -2860,7 +2903,8 @@ ssRestoreView();
     }).catch(function(){
       // 自动播放被拦：给按钮，同时放行对话循环（否则会一直卡在"AI 说话中"）
       currentAudio = null;
-      var chat = document.getElementById('coachChat');
+      lastPlayBlocked = true;      /* 让分句队列知道「系统不让响」，别再往下硬播 */
+      var chat = quiet ? null : document.getElementById('coachChat');
       if(chat){
         var btn = document.createElement('button');
         btn.className = 'cbtn cbtn-ghost';
@@ -2900,44 +2944,77 @@ ssRestoreView();
       return c.match(ttsCacheUrl(key));
     }).then(function(hit){ if(!hit) throw 0; return hit.blob(); });
   }
-  function coachSpeak(text, onDone){
-    if(!ttsOn){ if(onDone) onDone(); return; }
-    if(!text) { if(onDone) onDone(); return; }
-    var c = companion(state.role);
-    var uv = getUserVoice(state.role);
-    var voice = uv ? uv.id : c.voice;
-    var speed = uv ? uv.speed : (c.voiceSpeed || 1);
-    var key = voice + '|' + speed + '|' + text;
-    if(ttsCache[key]){ playTtsUrl(ttsCache[key], onDone); return; }
-    if(!(configured && voice && window.fetch)){ speakBrowser(text, onDone, voice, speed); return; }
-    function fallback(msg){
-      /* 只提示一次，免得每句话都弹 */
-      if(!ttsWarned){
-        ttsWarned = true;
-        toast(msg || '云端语音没响应，已改用手机自带朗读（音色会不跟随设置）');
+  /* ================= 分句播报 =================
+     真人是一句一句说的，中间会换气。整段憋完再开口有两个毛病：
+     ① 要等 1.5~2.5 秒才出声（AI 像在思考人生）；② 一句接一句没有停顿，像念稿。
+     现在：第一句先合成先播，播这句的同时后台把下一句取回来，句间留一点换气间隙。
+     额度不变——同样的字数，只是请求拆开、提前发。 */
+  var SPEAK_GAP_MS = 130;          /* 句间换气，太短急促、太长像卡顿 */
+  function splitUtterances(t){
+    var out = [], buf = '', n = t.length, i, ch;
+    for(i = 0; i < n; i++){
+      ch = t.charAt(i);
+      buf += ch;
+      if('.!?…;'.indexOf(ch) !== -1){
+        /* 把连着的标点（?! / ... / ."）一起吃掉，别切在中间 */
+        while(i + 1 < n && '.!?…;"”’)'.indexOf(t.charAt(i + 1)) !== -1){ buf += t.charAt(++i); }
+        if(i + 1 >= n || /\s/.test(t.charAt(i + 1))){
+          if(buf.trim()) out.push(buf.trim());
+          buf = '';
+        }
       }
-      speakBrowser(text, onDone, voice, speed);
     }
-    function fetchAndPlay(){
-      var ttsCtrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-      var ttsTimer = ttsCtrl ? setTimeout(function(){ try{ ttsCtrl.abort(); }catch(e){} }, 15000) : null;
-      fetch(WORKER_URL + '/tts', {
-        method:'POST',
-        headers:{'Content-Type':'application/json','X-App-Key':APP_KEY},
-        /* speaker 和 voice 都传：旧版 worker 只认 speaker，新版两个都认，避免音色被忽略后全落到默认女声 */
-        body: JSON.stringify({ text: text, speaker: voice, voice: voice, speed: speed }),
-        signal: ttsCtrl ? ttsCtrl.signal : undefined
+    if(buf.trim()) out.push(buf.trim());
+    return out.length ? out : [t];
+  }
+  /* 分段策略：第一段只放首句（最短的等待、最快的回应感），
+     后面的句子按较长阈值合并（真人也是一口气说两三句，不会一句一停）。
+     太碎的句子（"Oh!"）并到下一句，免得为两个字单独发一次合成请求。 */
+  function groupUtterances(parts, minLen){
+    var out = [], buf = '';
+    for(var i = 0; i < parts.length; i++){
+      buf = buf ? (buf + ' ' + parts[i]) : parts[i];
+      var need = out.length ? (minLen || 34) : 8;
+      if(buf.length >= need){ out.push(buf); buf = ''; }
+    }
+    if(buf){
+      if(out.length) out[out.length - 1] += ' ' + buf;
+      else out.push(buf);
+    }
+    return out;
+  }
+  function noteTtsFail(msg){
+    if(ttsWarned) return;                 /* 只提示一次，免得每句话都弹 */
+    ttsWarned = true;
+    toast(msg || '云端语音没响应，已改用手机自带朗读（音色会不跟随设置）');
+  }
+  /* 取一句话的音频：内存缓存 → 持久缓存 → 云端。取不到返回 null（交给手机朗读） */
+  function ttsFetchOne(spoken, voice, stillWanted){
+    var key = voice + '|' + spoken;
+    if(ttsCache[key]) return Promise.resolve(ttsCache[key]);
+    if(!(configured && voice && window.fetch)) return Promise.resolve(null);
+    function remote(){
+      /* 用户已经打断（点了麦克风 / 换了话题）就别再发请求了，省额度 */
+      if(stillWanted && !stillWanted()) return Promise.resolve(null);
+      var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      var timer = ctrl ? setTimeout(function(){ try{ ctrl.abort(); }catch(e){} }, 15000) : null;
+      return fetch(WORKER_URL + '/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-App-Key': APP_KEY },
+        /* speaker 和 voice 都传：旧版 worker 只认 speaker，新版两个都认，
+           避免音色被忽略后全落到默认女声 */
+        body: JSON.stringify({ text: spoken, speaker: voice, voice: voice }),
+        signal: ctrl ? ctrl.signal : undefined
       }).then(function(res){
         if(!res.ok){
           return res.text().then(function(t){
             var e = new Error('HTTP ' + res.status + ' ' + String(t || '').slice(0, 60));
-            e.status = res.status;
-            throw e;
+            e.status = res.status; throw e;
           }, function(){ var e = new Error('HTTP ' + res.status); e.status = res.status; throw e; });
         }
         return res.blob();
       }).then(function(blob){
-        if(ttsTimer) clearTimeout(ttsTimer);
+        if(timer) clearTimeout(timer);
         /* 防御：额度用完时部分情况会回 200 + 文本，不能拿去当音频播 */
         if(!blob || !blob.size || (blob.type && blob.type.indexOf('audio') === -1)){
           throw new Error('不是音频（' + (blob && blob.type) + '）');
@@ -2946,21 +3023,78 @@ ssRestoreView();
         var url = URL.createObjectURL(blob);
         cachePut(key, url);
         cachePutPersistent(key, blob);
-        playTtsUrl(url, onDone);
+        return url;
       }).catch(function(err){
-        if(ttsTimer) clearTimeout(ttsTimer);
-        if(err && err.name === 'AbortError') return;
-        if(err && err.status === 429) return fallback('今日免费语音额度用完了，先用手机自带朗读顶一下');
-        if(err && err.status === 401) return fallback('语音接口口令不对（worker 的 APP_KEY 和网页不一致）');
-        fallback('');
+        if(timer) clearTimeout(timer);
+        if(err && err.name === 'AbortError') return null;
+        if(err && err.status === 429) noteTtsFail('今日免费语音额度用完了，先用手机自带朗读顶一下');
+        else if(err && err.status === 401) noteTtsFail('语音接口口令不对（worker 的 APP_KEY 和网页不一致）');
+        else noteTtsFail('');
+        return null;
       });
     }
-    // 内存缓存没有 → 查持久缓存 → 都没有才真正请求（花钱的只有最后一步）
-    cacheGetPersistent(key).then(function(blob){
+    /* 持久缓存最多等 1.2 秒：个别环境里 Cache Storage 会一直不回调，
+       不设上限的话语音会静默消失（不播、也不走兜底），表现就是「点了没声音」 */
+    return Promise.race([
+      cacheGetPersistent(key),
+      new Promise(function(_, rej){ setTimeout(function(){ rej(new Error('cache-timeout')); }, 700); })
+    ]).then(function(blob){
       var url = URL.createObjectURL(blob);
       cachePut(key, url);
-      playTtsUrl(url, onDone);
-    }).catch(fetchAndPlay);
+      return url;
+    }).catch(remote);
+  }
+
+  function coachSpeak(text, onDone){
+    if(!ttsOn){ if(onDone) onDone(); return; }
+    if(!text) { if(onDone) onDone(); return; }
+    var c = companion(state.role) || {};
+    var uv = getUserVoice(state.role);
+    var voice = uv ? uv.id : (c.voice || '');
+    var speed = uv ? uv.speed : (c.voiceSpeed || 1);
+    /* 真正送进语音引擎的是「朗读版」文本（去掉 haha / *laughs* / emoji 那些念出来很假的） */
+    var parts = groupUtterances(splitUtterances(ttsText(text)));
+    if(!(configured && voice && window.fetch)){
+      /* 没有云端：直接整段交给手机朗读，别拆——手机上拆句反而磕巴 */
+      speakBrowser(parts.join(' '), onDone, voice, speed);
+      return;
+    }
+    var my = ++speakToken;
+    var finished = false;
+    function finish(){ if(finished) return; finished = true; if(onDone) onDone(); }
+    function alive(){ return my === speakToken && !finished; }
+    var gotUrl = {}, pending = {};
+    /* 只提前取一句：等待时间够短，又不会为了抢时间把额度一次打光 */
+    function prep(i){
+      if(i >= parts.length) return null;
+      if(gotUrl[i] !== undefined) return Promise.resolve(gotUrl[i]);
+      if(pending[i]) return pending[i];
+      pending[i] = ttsFetchOne(parts[i], voice, alive).then(function(url){
+        gotUrl[i] = url;
+        return url;
+      });
+      return pending[i];
+    }
+    var pos = 0;
+    function next(){
+      if(!alive()) return;
+      if(pos >= parts.length) return finish();
+      var i = pos++;
+      var cur = prep(i);
+      prep(i + 1);                       /* 播这句的同时，下一句已经在路上 */
+      cur.then(function(url){
+        if(!alive()) return;
+        var carry = function(){
+          if(!alive()) return;
+          /* 系统不让我们出声（没解锁音频），继续排下一句只会一句句静默失败 */
+          if(lastPlayBlocked) return finish();
+          setTimeout(next, SPEAK_GAP_MS);
+        };
+        if(url) playTtsUrl(url, carry, speed, i > 0);
+        else speakBrowser(parts[i], carry, voice, speed);
+      });
+    }
+    next();
   }
 
   /* ---- 「提示我一句」：卡壳时给出可接话的地道英文句（本地语料，不写历史） ---- */
@@ -4004,7 +4138,12 @@ ssRestoreView();
     loaded: loadedSet,
     /* 手动触发一次朗读（排查音色用）：默认读当前语伴，也可传 voiceId 临时指定 */
     say: function(t){ return coachSpeak(t || 'Voice test.', function(){}); },
-    resetTtsWarn: function(){ ttsWarned = false; }
+    resetTtsWarn: function(){ ttsWarned = false; },
+    /* 查看一段文字会怎样被朗读（排查「念出 haha / 星号」这类问题用） */
+    spoken: function(t){ return ttsText(t); },
+    /* 查看一段回复会被切成几段来播 */
+    chunks: function(t){ return groupUtterances(splitUtterances(ttsText(t))); },
+    stop: function(){ stopCurrentTTS(); }
   };
 })();
 /* 单词学习页：左右滑屏翻页（左滑=下一个，右滑=上一个，与按钮等效）

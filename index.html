@@ -1843,7 +1843,7 @@ ssRestoreView();
     if(!lines.length && !priority.length){ useData('通用日常'); }
     var seenL = {}, chosenLines = [];
     priority.forEach(function(l){ if(!seenL[l]){ seenL[l]=1; chosenLines.push(l); } });
-    if(chosenLines.length > 16){ chosenLines = chosenLines.slice(0, 16); }
+    if(chosenLines.length > 8){ chosenLines = chosenLines.slice(0, 8); }
     var pool = lines.slice();
     while(chosenLines.length < 8 && pool.length){ chosenLines.push(pool.splice(Math.floor(Math.random()*pool.length),1)[0]); }
     while(chosenLines.length < 8 && chosenLines.length < chosenLines.concat(priority.filter(function(l){return !seenL[l];})).length){

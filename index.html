@@ -1025,17 +1025,21 @@ function downloadBackup(text, fname){
   setTimeout(function(){ URL.revokeObjectURL(url); if(a.parentNode){ a.parentNode.removeChild(a); } }, 800);
   toast('进度已备份为 ' + fname);
 }
-function copyTextForBackup(text, okMsg){
+function copyTextForBackup(text, okMsg, btn){
+  function flashOk(){
+    if(btn && btn.textContent !== undefined){ var o = btn.textContent; btn.textContent = '✓ 已复制'; setTimeout(function(){ btn.textContent = o; }, 1800); }
+    toast(okMsg + '，已复制到剪贴板');
+  }
   function manual(){
     var shown = prompt(okMsg + '\n（若下方内容未自动复制，请长按全选后复制到备忘录）\n\n' + text, text);
     toast(okMsg);
   }
   if(navigator.clipboard && navigator.clipboard.writeText){
-    navigator.clipboard.writeText(text).then(function(){ toast(okMsg + '，已复制到剪贴板'); }).catch(function(){ manual(); });
+    navigator.clipboard.writeText(text).then(flashOk).catch(manual);
   } else { manual(); }
 }
 function copyBackupText(){
-  copyTextForBackup(JSON.stringify(buildBackup(), null, 2), '进度备份已生成');
+  copyTextForBackup(JSON.stringify(buildBackup(), null, 2), '进度备份已生成', document.getElementById('btnBackup'));
 }
 function applyBackup(o){
   if(!o || typeof o !== 'object' || Array.isArray(o)) return '文件内容不是有效的进度对象';
@@ -1247,7 +1251,7 @@ ssRestoreView();
   }
 
   function copyWriteText(){
-    copyTextForBackup(JSON.stringify(load(), null, 2), '日记备份已生成');
+    copyTextForBackup(JSON.stringify(load(), null, 2), '日记备份已生成', document.getElementById('writeCopy'));
   }
 
   function bindWrite(app){
@@ -2658,7 +2662,7 @@ ssRestoreView();
     var relCopy = document.getElementById('relCopy');
     if(relCopy) relCopy.addEventListener('click', function(){
       var text = JSON.stringify({ version:1, role:state.role, history: loadHist(state.role), memory: loadMem(state.role), relationship: getRel(state.role) }, null, 2);
-      copyTextForBackup(text, '语伴备份已生成');
+      copyTextForBackup(text, '语伴备份已生成', relCopy);
     });
     var relPaste = document.getElementById('relPaste');
     if(relPaste) relPaste.addEventListener('click', function(){

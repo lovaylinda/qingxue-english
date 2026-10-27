@@ -1392,7 +1392,7 @@ ssRestoreView();
     { file:'./docs_dialogues.js', topics:['点餐美食','出国场景','出国过境英语','点餐美食补充','旅行出差'] }
   ];
 
-  var state = { role:'nicole', topics:['通用日常'], auto:true, history:[], tipSeen:{}, rel:{}, sessionScene:'' };
+  var state = { role:'nicole', topics:['通用日常'], auto:true, history:[], tipSeen:{}, rel:{}, sessionScene:'', sessionClient:'' };
   var rec = null, finalText = '', silenceTimer = null, micOn = false, aiBusy = false, lastAIText = '', ttsOn = true;
   var handsFree = false, abortCtrl = null, currentAudio = null, travelerId = null;
   var requestId = 0;  // 跟踪请求：切换角色时旧请求回调直接丢弃
@@ -1428,17 +1428,19 @@ ssRestoreView();
   function pad2(n){ return n < 10 ? '0' + n : '' + n; }
   function dayKey(){ var d = new Date(); return d.getFullYear() + '-' + pad2(d.getMonth()+1) + '-' + pad2(d.getDate()); }
   function histKey(role){ return 'qingxue-coach-hist-' + role; }
+  /* 外贸客户(ahmet)/旅行E人：身份每次由用户设定，不保留长期记忆/历史/关系档案/备份 */
+  function isMemoryless(role){ return role === 'traveler' || role === 'ahmet'; }
   function loadHist(role){
-    if(role === 'traveler') return [];  // 旅行E人身份不固定，不保留跨会话历史
+    if(isMemoryless(role)) return [];  // 身份不固定，不保留跨会话历史
     try{ var a = JSON.parse(localStorage.getItem(histKey(role)) || 'null');
       if(Array.isArray(a)) return a.filter(function(m){ return m && m.role && typeof m.content === 'string'; }).slice(-20);
     }catch(e){}
     return [];
   }
   function persistSession(){
-    try{ localStorage.setItem(SESSION_KEY, JSON.stringify({ role: state.role, topics: state.topics, auto: state.auto, history: state.role === 'traveler' ? [] : state.history.slice(-20) })); }catch(e){}
-    // 每个语伴单独存一份对话，切换角色不丢聊天（旅行E人例外：不保留历史）
-    if(state.role !== 'traveler'){ try{ localStorage.setItem(histKey(state.role), JSON.stringify(state.history.slice(-20))); }catch(e){} }
+    try{ localStorage.setItem(SESSION_KEY, JSON.stringify({ role: state.role, topics: state.topics, auto: state.auto, history: isMemoryless(state.role) ? [] : state.history.slice(-20) })); }catch(e){}
+    // 每个语伴单独存一份对话，切换角色不丢聊天（身份不固定角色例外：不保留历史）
+    if(!isMemoryless(state.role)){ try{ localStorage.setItem(histKey(state.role), JSON.stringify(state.history.slice(-20))); }catch(e){} }
   }
   function restoreSession(){
     try{
@@ -1447,7 +1449,7 @@ ssRestoreView();
       if(s.role && COMPANIONS[s.role]) state.role = s.role;
       if(Array.isArray(s.topics) && s.topics.length) state.topics = s.topics.slice(0, 20);
       if(typeof s.auto === 'boolean') state.auto = s.auto;
-      if(state.role === 'traveler') state.history = [];
+      if(isMemoryless(state.role)) state.history = [];
       else if(Array.isArray(s.history)) state.history = s.history.filter(function(m){ return m && m.role && typeof m.content === 'string'; }).slice(-20);
     }catch(e){}
   }
@@ -1524,8 +1526,8 @@ ssRestoreView();
       var tid = getTravelerId();
       sys = sys.replace(/\{NAME\}/g, tid.name).replace(/\{NATION\}/g, tid.nation);
     }
-    if(role === 'traveler'){
-      /* 旅行E人：身份/背景不固定，不注入长期记忆和关系档案，只保留单轮上下文 */
+    if(isMemoryless(role)){
+      /* 身份/背景不固定角色：不注入长期记忆和关系档案，只保留单轮上下文 */
       sys = sys.replace('[RELATIONSHIP]', '');
     } else {
       sys = sys.replace('[RELATIONSHIP]', 'RELATIONSHIP FILE (things you two remember about each other):\n' + (getRel(role) || '(new acquaintances)'));
@@ -1540,6 +1542,9 @@ ssRestoreView();
     /* 本次会话场景背景（每次启动由用户设定，只作用于本轮） */
     if(state.sessionScene && state.sessionScene.trim()){
       sys += '\n\nSCENE & CONTEXT (set by the user for THIS conversation only):\n' + state.sessionScene + '\nOpen and steer the conversation around this scene naturally.';
+    }
+    if(role === 'ahmet' && state.sessionClient && state.sessionClient.trim()){
+      sys += '\n\nCLIENT PROFILE (the overseas client you are now playing — set by the user for THIS conversation only):\n' + state.sessionClient.trim() + '\nFully become this specific client now: name, gender, company role and the business context. Speak and act as this exact person for this whole conversation.';
     }
     sys += '\n\nLANGUAGE: Natural everyday English, short sentences (10-15 words). No baby talk, no obscure slang. One natural expression when it fits. Never correct her grammar.';
     return sys;
@@ -1867,6 +1872,14 @@ ssRestoreView();
   function coachAppend(who, text, cls){
     var chat = document.getElementById('coachChat');
     if(!chat) return;
+    if(who === 'sys'){
+      var tip = document.createElement('div');
+      tip.style.cssText = 'text-align:center;color:#8a93a6;font-size:12px;padding:8px 12px;';
+      tip.textContent = text;
+      chat.appendChild(tip);
+      chat.scrollTop = chat.scrollHeight;
+      return null;
+    }
     var row = document.createElement('div');
     row.className = 'cmsg ' + (who==='you' ? 'c-you' : 'c-ai');
     var name = document.createElement('div');
@@ -2084,7 +2097,7 @@ ssRestoreView();
       return;
     }
     state.history.push({role:'user', content:text});
-    if(state.role !== 'traveler') remember(state.role, text);   /* 长期记忆（旅行E人身份不固定，不记录） */
+    if(!isMemoryless(state.role)) remember(state.role, text);   /* 长期记忆（身份不固定角色不记录） */
     coachAppend('you', text);
     bumpStats(); persistSession(); renderStats();
     var myReqId = ++requestId;  // 记录本次请求 ID
@@ -2309,6 +2322,7 @@ ssRestoreView();
     resetChatUI();
     var c = companion(r);
     state.sessionScene = '';
+    state.sessionClient = '';
     openScenePanel();
   }
 
@@ -2355,16 +2369,34 @@ ssRestoreView();
       var h = 'Hey! I\u2019m ' + tid.name + ', from ' + tid.nation + '. Nice to meet you.';
       return scene ? (h + ' So let\u2019s talk about what you have in mind — where shall we start?') : (h + ' Where are you off to today?');
     }
+    if(role === 'ahmet'){
+      var cp = state.sessionClient ? state.sessionClient.trim() : '';
+      if(cp){
+        var who = (cp.match(/[A-Za-z][A-Za-z .'\-]*/) || [''])[0].trim() || (cp.split(/[\s，,、]/)[0] || 'your client');
+        return 'Hello! I\u2019m ' + who + '. Good to finally connect — so, let me get straight to our business today.';
+      }
+      return scene ? 'Hello, I\u2019m an overseas buyer for dental tools. Nice to talk with you — let\u2019s get into the details.' : 'Hello, I\u2019m an overseas buyer for dental tools. So — where are we with our order today?';
+    }
     var head = welcomeFor(role);
     return scene ? (head + ' I\u2019m all ears — tell me about it and let\u2019s dig in.') : head;
   }
-  function startNewSession(scene){
+  function startNewSession(scene, client, openBy){
     state.history = [];
     state.sessionScene = (scene || '').slice(0, 400);
+    state.sessionClient = (client || '').slice(0, 300);
     var matched = sceneMatchTopics(state.sessionScene);
     matched.forEach(function(t){ if(state.topics.indexOf(t) < 0) state.topics.push(t); });
     if(!matched.length && !state.topics.length) state.topics = ['通用日常'];
     persistSession(); syncTopicChips(); updateDialogueStatus(); rebuildChat();
+    // 外贸客户固定由用户先开口；其余语伴按用户在面板选择的开场方式
+    var userFirst = (state.role === 'ahmet') ? true : (openBy === 'user');
+    if(userFirst){
+      // 用户先开口：语伴不自动说，聚焦输入框（"在线了，你先说第一句吧"由 rebuildChat 显示）
+      toast(state.role === 'ahmet' ? '客户背景已就位，请你说第一句' : '好，由你先说第一句');
+      var _ct = document.getElementById('coachText');
+      if(_ct) _ct.focus();
+      return;
+    }
     var opener = sceneOpener(state.role, state.sessionScene);
     coachAppend('ai', opener);
     lastAIText = opener;
@@ -2378,19 +2410,37 @@ ssRestoreView();
     var wrap = document.createElement('div');
     wrap.className = 'rel-mask';
     wrap.id = 'scenePanel';
+    var isTrade = state.role === 'ahmet';
+    var openBy = isTrade ? 'user' : 'ai';   // 外贸客户固定你先说；其余默认语伴先说
     wrap.innerHTML = '<div class="rel-panel" style="max-width:540px;">'
       + '<div class="rel-head"><strong>🕊️ 和「' + esc(c.name) + '」开始一段新对话</strong><button class="cbtn cbtn-ghost" id="sceneClose">✕</button></div>'
-      + '<p class="rel-hint">先告诉我这次对话的<b>场合和背景</b>（中文或英文都行）。我会自动匹配话题，然后由语伴先开口。</p>'
+      + '<p class="rel-hint">先告诉我这次对话的<b>场合和背景</b>' + (isTrade ? '和<b>客户人物背景</b>' : '') + '（中文或英文都行）。我会自动匹配话题，然后' + (isTrade ? '由你先开口，语伴会以设定的客户身份回应' : '选择开场方式：由你先说，或语伴先说') + '。</p>'
       + '<textarea id="sceneText" rows="3" placeholder="例如：我正要给一位美国客户开电话会介绍一款牙科铣刀 / 我在机场准备值机 / 周末想聊聊上次的瑜伽课"></textarea>'
+      + (isTrade ? '<textarea id="sceneClient" rows="2" placeholder="客户人物背景（外贸客户专用）：例如：美国采购经理 Jack，男，负责齿科耗材采购，正询一款车针的报价"></textarea>' : '')
+      + (isTrade ? ''
+          : '<div class="rel-openrow" style="display:flex;align-items:center;gap:6px;margin:6px 0 2px;"><span style="font-size:12px;opacity:.7;">开场方式：</span>'
+            + '<button class="cbtn cbtn-ghost" id="sceneOpenAI">🤖 语伴先说</button>'
+            + '<button class="cbtn cbtn-ghost" id="sceneOpenUser">🗣️ 我先说</button></div>')
       + '<div class="rel-actions" style="justify-content:space-between;">'
       + '<button class="cbtn cbtn-ghost" id="sceneSkip">🎲 随机开场</button>'
       + '<button class="cbtn" id="sceneStart">🚀 开始对话</button>'
       + '</div></div>';
     document.body.appendChild(wrap);
     document.getElementById('sceneClose').addEventListener('click', function(){ wrap.remove(); });
-    document.getElementById('sceneSkip').addEventListener('click', function(){ wrap.remove(); startNewSession(''); });
+    function paintOpen(){
+      var a = document.getElementById('sceneOpenAI'), u = document.getElementById('sceneOpenUser');
+      if(a) a.classList.toggle('active', openBy === 'ai');
+      if(u) u.classList.toggle('active', openBy === 'user');
+    }
+    var oa = document.getElementById('sceneOpenAI'), ou = document.getElementById('sceneOpenUser');
+    if(oa) oa.addEventListener('click', function(){ openBy = 'ai'; paintOpen(); });
+    if(ou) ou.addEventListener('click', function(){ openBy = 'user'; paintOpen(); });
+    paintOpen();
+    document.getElementById('sceneSkip').addEventListener('click', function(){ wrap.remove(); startNewSession('', '', openBy); });
     document.getElementById('sceneStart').addEventListener('click', function(){
-      var s = document.getElementById('sceneText').value.trim(); wrap.remove(); startNewSession(s);
+      var s = document.getElementById('sceneText').value.trim();
+      var cl = (document.getElementById('sceneClient') ? document.getElementById('sceneClient').value : '').trim();
+      wrap.remove(); startNewSession(s, cl, openBy);
     });
     var st = document.getElementById('sceneText');
     if(st){ st.focus(); st.addEventListener('keydown', function(ev){ if(ev.key === 'Enter' && !ev.shiftKey){ ev.preventDefault(); document.getElementById('sceneStart').click(); } }); }
@@ -2476,9 +2526,9 @@ ssRestoreView();
       var roles = ['nicole','mike','stan','traveler','ahmet','otis'];
       roles.forEach(function(r){
         data.roles[r] = {
-          history: r === 'traveler' ? [] : loadHist(r),
-          memory: r === 'traveler' ? [] : loadMem(r),
-          relationship: r === 'traveler' ? '' : getRel(r)
+          history: isMemoryless(r) ? [] : loadHist(r),
+          memory: isMemoryless(r) ? [] : loadMem(r),
+          relationship: isMemoryless(r) ? '' : getRel(r)
         };
       });
       data.voices = JSON.parse(localStorage.getItem('coach_voices') || '{}');
@@ -2502,7 +2552,7 @@ ssRestoreView();
           var data = JSON.parse(ev.target.result);
           if(!data.roles) throw new Error('格式不对');
           Object.keys(data.roles).forEach(function(r){
-            if(r === 'traveler') return;  // 旅行E人不恢复长期数据
+            if(isMemoryless(r)) return;  // 身份不固定角色不恢复长期数据
             var d = data.roles[r];
             if(d.history) try{ localStorage.setItem(histKey(r), JSON.stringify(d.history)); }catch(e){}
             if(d.memory) try{ localStorage.setItem(memKey(r), JSON.stringify(d.memory)); }catch(e){}
@@ -2701,7 +2751,7 @@ ssRestoreView();
       +   '<div class="crole-row" id="coachRoles">' + rolesHtml + '</div>'
       +   '<div class="coach-bar">'
       +     '<button class="cbtn' + (state.auto?' active':'') + '" id="coachAuto">' + (state.auto?'✨ 自动匹配':'📌 手动选话题') + '</button>'
-      +     (state.role === 'traveler' ? '' : '<button class="cbtn cbtn-ghost" id="coachRel">📋 关系档案</button>')
+      +     (isMemoryless(state.role) ? '' : '<button class="cbtn cbtn-ghost" id="coachRel">📋 关系档案</button>')
       +     '<button class="cbtn cbtn-ghost" id="coachVoicePicker">🎙️ 音色</button>'
       +     '<button class="cbtn cbtn-ghost" id="coachBackup">💾 备份/恢复</button>'
       +   '</div>'
@@ -2749,7 +2799,8 @@ ssRestoreView();
     ct.addEventListener('input', autoGrowText);
     document.getElementById('coachHands').addEventListener('click', toggleHandsFree);
     document.getElementById('coachAuto').addEventListener('click', toggleAuto);
-    document.getElementById('coachRel').addEventListener('click', openRelPanel);
+    var _relBtn = document.getElementById('coachRel');
+    if(_relBtn) _relBtn.addEventListener('click', openRelPanel);
     var backupBtn = document.getElementById('coachBackup');
     if(backupBtn) backupBtn.addEventListener('click', openBackupPanel);
     var hintBtn = document.getElementById('coachHint');

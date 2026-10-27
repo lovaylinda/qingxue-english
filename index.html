@@ -561,24 +561,12 @@ function renderHome(){
   html += '<div class="prog-foot"><span>进度只保存在本机浏览器 · 清除浏览器数据前请先备份</span>'
        + '<span class="backup-row">'
        + '<button class="mini-btn" id="btnBackup">💾 备份进度</button>'
-       + '<button class="mini-btn" id="btnCopy">📋 复制备份</button>'
        + '<button class="mini-btn" id="btnRestore">📂 恢复进度</button>'
-       + '<button class="mini-btn" id="btnPasteRestore">📋 粘贴恢复</button>'
        + '</span>'
-       + '<span class="backup-hint">备份：弹保存框时选本机/下载位置即可保存到手机；点「复制备份」可粘贴到备忘录保存。恢复：点恢复后选「文件/文件管理器」，找到本机保存的备份文件即可。</span>'
-       + '<input type="file" id="fileRestore" accept=".json,application/json" style="display:none"></div>';
+       + '<span class="backup-hint">备份：点「备份进度」复制全部进度（自动复制或弹窗长按复制），粘到备忘录保存。恢复：点「恢复进度」把之前复制的进度粘贴回来即可。</span></div>';
   $('app').innerHTML = html;
-  $('btnBackup').onclick = backupToFile;
-  $('btnCopy').onclick = copyBackupText;
-  $('btnRestore').onclick = function(){
-    toast('恢复：在文件列表选「文件/文件管理器」，找到本机保存的备份 JSON 文件');
-    $('fileRestore').click();
-  };
-  $('btnPasteRestore').onclick = pasteRestore;
-  $('fileRestore').onchange = function(){
-    if(this.files && this.files[0]){ restoreFromFile(this.files[0]); }
-    this.value = '';
-  };
+  $('btnBackup').onclick = copyBackupText;
+  $('btnRestore').onclick = pasteRestore;
 }
 
 /* ================= 视图：单词学习 ================= */
@@ -1037,29 +1025,17 @@ function downloadBackup(text, fname){
   setTimeout(function(){ URL.revokeObjectURL(url); if(a.parentNode){ a.parentNode.removeChild(a); } }, 800);
   toast('进度已备份为 ' + fname);
 }
-function copyBackupText(){
-  var o = buildBackup();
-  var text = JSON.stringify(o, null, 2);
-  var okMsg = '备份内容已复制，可粘贴到备忘录保存';
-  function legacyCopy(){
-    var ta = document.createElement('textarea');
-    ta.value = text;
-    ta.style.position = 'fixed';
-    ta.style.opacity = '0';
-    document.body.appendChild(ta);
-    ta.focus();
-    ta.select();
-    var ok = false;
-    try{ ok = document.execCommand('copy'); }catch(e){ ok = false; }
-    document.body.removeChild(ta);
-    return ok;
+function copyTextForBackup(text, okMsg){
+  function manual(){
+    var shown = prompt(okMsg + '\n（若下方内容未自动复制，请长按全选后复制到备忘录）\n\n' + text, text);
+    toast(okMsg);
   }
   if(navigator.clipboard && navigator.clipboard.writeText){
-    navigator.clipboard.writeText(text).then(function(){ toast(okMsg); })
-    .catch(function(){ toast(legacyCopy() ? okMsg : '复制失败：浏览器不支持剪贴板'); });
-  } else {
-    toast(legacyCopy() ? okMsg : '复制失败：浏览器不支持剪贴板');
-  }
+    navigator.clipboard.writeText(text).then(function(){ toast(okMsg + '，已复制到剪贴板'); }).catch(function(){ manual(); });
+  } else { manual(); }
+}
+function copyBackupText(){
+  copyTextForBackup(JSON.stringify(buildBackup(), null, 2), '进度备份已生成');
 }
 function applyBackup(o){
   if(!o || typeof o !== 'object' || Array.isArray(o)) return '文件内容不是有效的进度对象';
@@ -1271,11 +1247,7 @@ ssRestoreView();
   }
 
   function copyWriteText(){
-    var text = JSON.stringify(load(), null, 2);
-    var msg = '日记备份已复制，可粘贴到备忘录保存';
-    function legacyCopy(){ var ta=document.createElement('textarea'); ta.value=text; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.focus(); ta.select(); var ok=false; try{ ok=document.execCommand('copy'); }catch(e){ ok=false; } document.body.removeChild(ta); return ok; }
-    if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(function(){ toast(msg); }).catch(function(){ toast(legacyCopy()?msg:'复制失败'); }); }
-    else { toast(legacyCopy()?msg:'复制失败'); }
+    copyTextForBackup(JSON.stringify(load(), null, 2), '日记备份已生成');
   }
 
   function bindWrite(app){
@@ -2646,7 +2618,7 @@ ssRestoreView();
       + '<textarea id="relText" rows="6" placeholder="例如：见过 2 次、还没合作、印象不错…">' + esc(getRel(state.role)) + '</textarea>'
       + '<div class="rel-actions"><button class="cbtn" id="relSave">保存</button><button class="cbtn cbtn-ghost" id="relReset">恢复默认</button></div>'
       + (isMemoryless(state.role) ? '' : '<div class="rel-mem"><div class="rel-mem-head">🧠 长期记忆（Ta 从你跨会话说的话里自动记下的）</div>'
-      + '<div class="rel-mem-list">' + (loadMem(state.role).length ? loadMem(state.role).map(function(s, i){ return '<div class="rel-mem-item" data-mem-idx="' + i + '">' + esc(s) + ' <button class="mem-del" data-mem-idx="' + i + '" style="float:right;border:none;background:#ffe1e1;color:#e53935;cursor:pointer;width:20px;height:20px;border-radius:50%;font-size:12px;line-height:20px;text-align:center;padding:0;">✕</button></div>'; }).join('') : '<div class="rel-mem-item rel-mem-empty">还没有记忆。聊几句自我介绍，Ta 就会记住并之后引用。</div>') + '</div></div>')
+      + '<div class="rel-mem-list">' + (loadMem(state.role).length ? loadMem(state.role).map(function(s, i){ return '<div class="rel-mem-item" data-mem-idx="' + i + '">' + esc(s) + ' <button class="mem-del" data-mem-idx="' + i + '" style="float:right;border:none;background:#ffe1e1;color:#e53935;cursor:pointer;width:20px;height:20px;border-radius:50%;font-size:12px;line-height:20px;text-align:center;padding:0;">✕</button></div>'; }).join('') : '<div class="rel-mem-item rel-mem-empty">还没有自动记下的记忆。和 Ta 聊带“我”的陈述（如“我喜欢…”“我是…”），Ta 会自动记下，之后每条右侧有 ✕ 可单独删除。</div>') + '</div></div>')
       + '<div class="rel-mem"><div class="rel-mem-head">💾 备份/恢复<button class="cbtn cbtn-ghost" id="relCopy">📋 复制备份</button><button class="cbtn cbtn-ghost" id="relPaste">📥 粘贴恢复</button></div>'
       + '<div class="rel-mem-list"><div class="rel-mem-item rel-mem-empty">备份这个语伴的对话历史、长期记忆、关系档案。点「📋 复制备份」存到备忘录，换机或清缓存后「📥 粘贴恢复」。</div></div></div>'
       + '<div class="rel-mem"><div class="rel-mem-head">💬 对话历史<button class="cbtn cbtn-ghost" id="chatExport">导出对话</button><button class="cbtn cbtn-ghost" id="chatImport">恢复对话</button><button class="cbtn cbtn-ghost" id="chatClear" style="margin-left:6px;">清空对话</button></div>'
@@ -2677,7 +2649,7 @@ ssRestoreView();
           btn.parentElement.remove();
           if(!mem.length){
             var list = document.querySelector('#relPanel .rel-mem-list');
-            if(list) list.innerHTML = '<div class="rel-mem-item rel-mem-empty">还没有记忆。聊几句自我介绍，Ta 就会记住并之后引用。</div>';
+            if(list) list.innerHTML = '<div class="rel-mem-item rel-mem-empty">还没有自动记下的记忆。和 Ta 聊带“我”的陈述（如“我喜欢…”“我是…”），Ta 会自动记下，之后每条右侧有 ✕ 可单独删除。</div>';
           }
           toast('已删除这条记忆');
         }
@@ -2686,10 +2658,7 @@ ssRestoreView();
     var relCopy = document.getElementById('relCopy');
     if(relCopy) relCopy.addEventListener('click', function(){
       var text = JSON.stringify({ version:1, role:state.role, history: loadHist(state.role), memory: loadMem(state.role), relationship: getRel(state.role) }, null, 2);
-      var msg = '备份已复制，可粘贴到备忘录保存';
-      function legacyCopy(){ var ta=document.createElement('textarea'); ta.value=text; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.focus(); ta.select(); var ok=false; try{ ok=document.execCommand('copy'); }catch(e){ ok=false; } document.body.removeChild(ta); return ok; }
-      if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(function(){ toast(msg); }).catch(function(){ toast(legacyCopy()?msg:'复制失败'); }); }
-      else { toast(legacyCopy()?msg:'复制失败'); }
+      copyTextForBackup(text, '语伴备份已生成');
     });
     var relPaste = document.getElementById('relPaste');
     if(relPaste) relPaste.addEventListener('click', function(){

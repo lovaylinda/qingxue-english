@@ -563,6 +563,7 @@ function renderHome(){
        + '<button class="mini-btn" id="btnBackup">💾 备份进度</button>'
        + '<button class="mini-btn" id="btnCopy">📋 复制备份</button>'
        + '<button class="mini-btn" id="btnRestore">📂 恢复进度</button>'
+       + '<button class="mini-btn" id="btnPasteRestore">📋 粘贴恢复</button>'
        + '</span>'
        + '<span class="backup-hint">备份：弹保存框时选本机/下载位置即可保存到手机；点「复制备份」可粘贴到备忘录保存。恢复：点恢复后选「文件/文件管理器」，找到本机保存的备份文件即可。</span>'
        + '<input type="file" id="fileRestore" accept=".json,application/json" style="display:none"></div>';
@@ -573,6 +574,7 @@ function renderHome(){
     toast('恢复：在文件列表选「文件/文件管理器」，找到本机保存的备份 JSON 文件');
     $('fileRestore').click();
   };
+  $('btnPasteRestore').onclick = pasteRestore;
   $('fileRestore').onchange = function(){
     if(this.files && this.files[0]){ restoreFromFile(this.files[0]); }
     this.value = '';
@@ -902,7 +904,7 @@ function render(){
   }else if(route.view === 'books' && route.slug){
     renderBookChapters();
   }else if(route.view === 'coach'){
-    renderCoach();
+    if(typeof window.renderCoach === 'function'){ window.renderCoach(); }
   }else if(route.view === 'write'){
     renderWrite();
   }else{
@@ -1117,6 +1119,16 @@ function restoreFromFile(file){
   reader.onerror = function(){ toast('恢复失败：无法读取文件'); };
   reader.readAsText(file);
 }
+function pasteRestore(){
+  var text = prompt('把「📋 复制备份」得到的 JSON 粘贴到这里，点确定恢复进度：');
+  if(!text || !text.trim()) return;
+  var o = null;
+  try{ o = JSON.parse(text); }catch(e){ toast('恢复失败：不是有效的备份文本'); return; }
+  var err = applyBackup(o);
+  if(err){ toast('恢复失败：' + err); return; }
+  toast('恢复成功，即将刷新…');
+  setTimeout(function(){ location.reload(); }, 500);
+}
 
 loadState();
 ssRestoreView();
@@ -1235,6 +1247,29 @@ ssRestoreView();
     reader.readAsText(file);
   }
 
+  function pasteImport(){
+    var text = prompt('把导出的 JSON 或 MD 内容粘贴到这里，点确定导入：');
+    if(!text || !text.trim()) return;
+    var list = load(), have = {}; list.forEach(function(e){ have[e.id]=1; });
+    var added = 0;
+    try{
+      var data = JSON.parse(text);
+      var arr = Array.isArray(data) ? data : (data.entries || []);
+      arr.forEach(function(e){ if(e && e.id && !have[e.id]){ have[e.id]=1; list.push(e); added++; } });
+      save(list); renderWrite(); toast(added ? '导入成功 ' + added + ' 篇' : '没有新增的日记');
+    }catch(err){
+      var blocks = String(text).split(/\n-{3,}\s*\n/);
+      blocks.forEach(function(b){
+        var m = b.match(/^#\s+(.+?)\s*\n+(?:\n+)?([\s\S]*)$/);
+        if(!m) return;
+        var body = (m[2]||'').trim(); if(!body) return;
+        var id = uid(); if(have[id]) return; have[id]=1;
+        list.push({ id:id, ts:Date.now(), title:m[1].trim(), text:body, updated:dateStamp(new Date()) }); added++;
+      });
+      save(list); renderWrite(); toast(added ? '导入成功 ' + added + ' 篇' : '没有识别到可导入的日记');
+    }
+  }
+
   function bindWrite(app){
     var inp=app.querySelector('#writeSearch');
     if(inp) inp.oninput=function(){
@@ -1249,6 +1284,7 @@ ssRestoreView();
     var em=app.querySelector('#writeExportMD'); if(em) em.onclick=exportMD;
     var imp=app.querySelector('#writeImport'); var file=app.querySelector('#writeImportFile');
     if(imp) imp.onclick=function(){ if(file) file.click(); };
+    var pj=app.querySelector('#writePaste'); if(pj) pj.onclick=pasteImport;
     if(file) file.onchange=function(){ if(file.files && file.files[0]) importFile(file.files[0]); file.value=''; };
     var listEl=app.querySelector('#writeList');
     if(listEl) listEl.addEventListener('click', function(ev){
@@ -1279,6 +1315,7 @@ ssRestoreView();
       +     '<button class="wbtn" id="writeExportJSON">导出 JSON</button>'
       +     '<button class="wbtn" id="writeExportMD">导出 MD</button>'
       +     '<button class="wbtn" id="writeImport">导入</button>'
+      +     '<button class="wbtn" id="writePaste">📋 粘贴导入</button>'
       +   '</div>'
       + '</div>'
       + '<div id="writeList">' + (list.length ? list.map(cardHtml).join('') : '<div class="write-empty">还没有日记。点「＋ 写一篇」，用英文写点今天的想法。</div>') + '</div>'
@@ -1431,16 +1468,27 @@ ssRestoreView();
   /* 外贸客户(ahmet)/旅行E人：身份每次由用户设定，不保留长期记忆/历史/关系档案/备份 */
   function isMemoryless(role){ return role === 'traveler' || role === 'ahmet'; }
   function loadHist(role){
-    if(isMemoryless(role)) return [];  // 身份不固定，不保留跨会话历史
-    try{ var a = JSON.parse(localStorage.getItem(histKey(role)) || 'null');
-      if(Array.isArray(a)) return a.filter(function(m){ return m && m.role && typeof m.content === 'string'; }).slice(-20);
-    }catch(e){}
-    return [];
+    var raw = null;
+    try{ raw = localStorage.getItem(histKey(role)); }catch(e){}
+    var arr = [], savedAt = 0;
+    if(raw){
+      try{
+        var o = JSON.parse(raw);
+        if(o && typeof o === 'object' && Array.isArray(o.history)){ arr = o.history; savedAt = o.savedAt || 0; }
+        else if(Array.isArray(o)){ arr = o; }
+      }catch(e){}
+    }
+    // 短时记忆角色：超过 8 小时自动清空（当天记住上下文，过期即忘）
+    if(isMemoryless(role) && savedAt && (Date.now() - savedAt) > 8*3600*1000){
+      try{ localStorage.removeItem(histKey(role)); }catch(e){}
+      return [];
+    }
+    return arr.filter(function(m){ return m && m.role && typeof m.content === 'string'; }).slice(-20);
   }
   function persistSession(){
     try{ localStorage.setItem(SESSION_KEY, JSON.stringify({ role: state.role, topics: state.topics, auto: state.auto, history: isMemoryless(state.role) ? [] : state.history.slice(-20) })); }catch(e){}
-    // 每个语伴单独存一份对话，切换角色不丢聊天（身份不固定角色例外：不保留历史）
-    if(!isMemoryless(state.role)){ try{ localStorage.setItem(histKey(state.role), JSON.stringify(state.history.slice(-20))); }catch(e){} }
+    // 每个语伴单独存一份对话，带时间戳；短时记忆角色 8 小时后由 loadHist 自动清空
+    try{ localStorage.setItem(histKey(state.role), JSON.stringify({ savedAt: Date.now(), history: state.history.slice(-20) })); }catch(e){}
   }
   function restoreSession(){
     try{
@@ -1449,7 +1497,7 @@ ssRestoreView();
       if(s.role && COMPANIONS[s.role]) state.role = s.role;
       if(Array.isArray(s.topics) && s.topics.length) state.topics = s.topics.slice(0, 20);
       if(typeof s.auto === 'boolean') state.auto = s.auto;
-      if(isMemoryless(state.role)) state.history = [];
+      if(isMemoryless(state.role)) state.history = loadHist(state.role);
       else if(Array.isArray(s.history)) state.history = s.history.filter(function(m){ return m && m.role && typeof m.content === 'string'; }).slice(-20);
     }catch(e){}
   }
@@ -2407,7 +2455,7 @@ ssRestoreView();
     wrap.id = 'scenePanel';
     var isTrade = state.role === 'ahmet';
     var openBy = isTrade ? 'user' : 'ai';   // 外贸客户固定你先说；其余默认语伴先说
-    wrap.innerHTML = '<div class="rel-panel" style="max-width:540px;">'
+    wrap.innerHTML = '<div class="rel-panel scene-panel" style="max-width:460px;">'
       + '<div class="rel-head"><strong>🕊️ 和「' + esc(c.name) + '」开始一段新对话</strong><button class="cbtn cbtn-ghost" id="sceneClose">✕</button></div>'
       + '<p class="rel-hint">先输入这次对话的<b>聊天背景</b>（中文或英文都行，可包含场合、人物、想聊的内容等）。我会自动匹配话题，然后' + (isTrade ? '由你先开口，语伴会以你设定的身份回应' : '选择开场方式：由你先说，或语伴先说') + '。</p>'
       + '<textarea id="sceneText" rows="4" placeholder="例如：我要给一位美国客户介绍车针报价，我是Linda（牙科铣刀出口商），对方是美国采购经理 Jack，正询一款车针的价格 / 我在机场准备值机 / 周末想聊聊瑜伽课"></textarea>'
@@ -2494,6 +2542,31 @@ ssRestoreView();
   }
 
   /* ---- 备份/恢复面板 ---- */
+  function buildBackupData(){
+    var data = { version: 1, exportDate: new Date().toISOString(), roles: {} };
+    var roles = ['nicole','mike','stan','traveler','ahmet','otis'];
+    roles.forEach(function(r){
+      data.roles[r] = {
+        history: isMemoryless(r) ? [] : loadHist(r),
+        memory: isMemoryless(r) ? [] : loadMem(r),
+        relationship: isMemoryless(r) ? '' : getRel(r)
+      };
+    });
+    data.voices = JSON.parse(localStorage.getItem('coach_voices') || '{}');
+    return data;
+  }
+  function doImportCoach(data){
+    if(!data || !data.roles || typeof data.roles !== 'object') return false;
+    Object.keys(data.roles).forEach(function(r){
+      if(isMemoryless(r)) return;  // 身份不固定角色不恢复长期数据
+      var d = data.roles[r];
+      if(d.history) try{ localStorage.setItem(histKey(r), JSON.stringify(d.history)); }catch(e){}
+      if(d.memory) try{ localStorage.setItem(memKey(r), JSON.stringify(d.memory)); }catch(e){}
+      if(d.relationship) try{ localStorage.setItem(relKey(r), d.relationship); }catch(e){}
+    });
+    if(data.voices) try{ localStorage.setItem('coach_voices', JSON.stringify(data.voices)); }catch(e){}
+    return true;
+  }
   function openBackupPanel(){
     var old = document.getElementById('backupPanel');
     if(old) old.remove();
@@ -2502,29 +2575,21 @@ ssRestoreView();
     wrap.id = 'backupPanel';
     wrap.innerHTML = '<div class="rel-panel">'
       + '<div class="rel-head"><strong>💾 AI 语伴数据备份/恢复</strong><button class="cbtn cbtn-ghost" id="backupClose">✕</button></div>'
-      + '<p class="rel-hint">导出所有语伴的对话历史、长期记忆、关系档案、音色设置，存到手机里。换手机或重装浏览器后，可以导入恢复。</p>'
-      + '<div class="rel-actions" style="justify-content:space-between;">'
-      + '<button class="cbtn" id="backupExport">📤 导出数据</button>'
-      + '<button class="cbtn cbtn-ghost" id="backupImport">📥 导入数据</button>'
+      + '<p class="rel-hint">导出/复制所有语伴的对话历史、长期记忆、关系档案、音色设置。换手机或重装浏览器后，可导入或粘贴恢复。</p>'
+      + '<div class="rel-actions" style="justify-content:space-between;flex-wrap:wrap;">'
+      + '<button class="cbtn" id="backupExport">📤 导出文件</button>'
+      + '<button class="cbtn cbtn-ghost" id="backupCopy">📋 复制备份</button>'
+      + '<button class="cbtn cbtn-ghost" id="backupPaste">📥 粘贴恢复</button>'
+      + '<button class="cbtn cbtn-ghost" id="backupImport">📂 导入文件</button>'
       + '<input type="file" id="backupFile" accept=".json" style="display:none;" />'
       + '</div>'
-      + '<p class="rel-hint" style="margin-top:12px;">⚠️ 数据存在手机浏览器本地，清缓存会丢。建议定期导出备份。</p>'
+      + '<p class="rel-hint" style="margin-top:12px;">⚠️ 数据存在手机浏览器本地，清缓存会丢。建议定期导出或「📋 复制备份」到备忘录保存。</p>'
       + '</div>';
     document.body.appendChild(wrap);
     function close(){ wrap.remove(); }
     document.getElementById('backupClose').addEventListener('click', close);
     document.getElementById('backupExport').addEventListener('click', function(){
-      var data = { version: 1, exportDate: new Date().toISOString(), roles: {} };
-      // 收集所有语伴的数据
-      var roles = ['nicole','mike','stan','traveler','ahmet','otis'];
-      roles.forEach(function(r){
-        data.roles[r] = {
-          history: isMemoryless(r) ? [] : loadHist(r),
-          memory: isMemoryless(r) ? [] : loadMem(r),
-          relationship: isMemoryless(r) ? '' : getRel(r)
-        };
-      });
-      data.voices = JSON.parse(localStorage.getItem('coach_voices') || '{}');
+      var data = buildBackupData();
       var blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
       var a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
@@ -2532,6 +2597,21 @@ ssRestoreView();
       a.click();
       URL.revokeObjectURL(a.href);
       toast('备份文件已导出，请保存到手机里');
+    });
+    document.getElementById('backupCopy').addEventListener('click', function(){
+      var text = JSON.stringify(buildBackupData(), null, 2);
+      function legacyCopy(){ var ta=document.createElement('textarea'); ta.value=text; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.focus(); ta.select(); var ok=false; try{ ok=document.execCommand('copy'); }catch(e){ ok=false; } document.body.removeChild(ta); return ok; }
+      if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(function(){ toast('备份内容已复制，可粘贴到备忘录保存'); }).catch(function(){ toast(legacyCopy() ? '备份内容已复制' : '复制失败：浏览器不支持剪贴板'); }); }
+      else { toast(legacyCopy() ? '备份内容已复制' : '复制失败：浏览器不支持剪贴板'); }
+    });
+    document.getElementById('backupPaste').addEventListener('click', function(){
+      var text = prompt('把「📋 复制备份」得到的 JSON 粘贴到这里，点确定恢复语伴数据：');
+      if(!text || !text.trim()) return;
+      try{
+        var data = JSON.parse(text);
+        if(doImportCoach(data)){ toast('恢复成功！刷新页面后生效'); close(); }
+        else { toast('恢复失败：格式不对'); }
+      }catch(err){ toast('恢复失败：不是有效的备份文本'); }
     });
     document.getElementById('backupImport').addEventListener('click', function(){
       document.getElementById('backupFile').click();
@@ -2543,20 +2623,9 @@ ssRestoreView();
       reader.onload = function(ev){
         try{
           var data = JSON.parse(ev.target.result);
-          if(!data.roles) throw new Error('格式不对');
-          Object.keys(data.roles).forEach(function(r){
-            if(isMemoryless(r)) return;  // 身份不固定角色不恢复长期数据
-            var d = data.roles[r];
-            if(d.history) try{ localStorage.setItem(histKey(r), JSON.stringify(d.history)); }catch(e){}
-            if(d.memory) try{ localStorage.setItem(memKey(r), JSON.stringify(d.memory)); }catch(e){}
-            if(d.relationship) try{ localStorage.setItem(relKey(r), d.relationship); }catch(e){}
-          });
-          if(data.voices) try{ localStorage.setItem('coach_voices', JSON.stringify(data.voices)); }catch(e){}
-          toast('导入成功！刷新页面后生效');
-          close();
-        }catch(err){
-          toast('导入失败：文件格式不对');
-        }
+          if(doImportCoach(data)){ toast('导入成功！刷新页面后生效'); close(); }
+          else { toast('导入失败：文件格式不对'); }
+        }catch(err){ toast('导入失败：文件格式不对'); }
       };
       reader.readAsText(file);
     });
@@ -2575,10 +2644,11 @@ ssRestoreView();
       + '<p class="rel-hint">写在这里的进展，每次对话都会注入给「' + esc(c.name) + '」，让 Ta 记得你们之间的事、越聊越熟。存于本机浏览器。</p>'
       + '<textarea id="relText" rows="6" placeholder="例如：见过 2 次、还没合作、印象不错…">' + esc(getRel(state.role)) + '</textarea>'
       + '<div class="rel-actions"><button class="cbtn" id="relSave">保存</button><button class="cbtn cbtn-ghost" id="relReset">恢复默认</button></div>'
-      + '<div class="rel-mem"><div class="rel-mem-head">🧠 长期记忆（Ta 从你跨会话说的话里自动记下的）<button class="cbtn cbtn-ghost" id="memClear">清空记忆</button></div>'
-      + '<div class="rel-mem-list">' + (loadMem(state.role).length ? loadMem(state.role).map(function(s, i){ return '<div class="rel-mem-item" data-mem-idx="' + i + '">' + esc(s) + ' <button class="mem-del" data-mem-idx="' + i + '" style="float:right;border:none;background:none;color:#e53935;cursor:pointer;padding:0 4px;">✕</button></div>'; }).join('') : '<div class="rel-mem-item rel-mem-empty">还没有记忆。聊几句自我介绍，Ta 就会记住并之后引用。</div>') + '</div></div>'
-      + '<div class="rel-mem"><div class="rel-mem-head">💬 对话历史<button class="cbtn cbtn-ghost" id="chatExport">导出对话</button><button class="cbtn cbtn-ghost" id="chatClear" style="margin-left:6px;">清空对话</button></div>'
-      + '<div class="rel-mem-list" style="max-height:80px;"><div class="rel-mem-item rel-mem-empty">当前共 ' + state.history.length + ' 条消息（含你和' + c.name + '的对话）</div></div></div>'
+      + (isMemoryless(state.role) ? '' : '<div class="rel-mem"><div class="rel-mem-head">🧠 长期记忆（Ta 从你跨会话说的话里自动记下的）<button class="cbtn cbtn-ghost" id="memClear">清空记忆</button></div>'
+      + '<div class="rel-mem-list">' + (loadMem(state.role).length ? loadMem(state.role).map(function(s, i){ return '<div class="rel-mem-item" data-mem-idx="' + i + '">' + esc(s) + ' <button class="mem-del" data-mem-idx="' + i + '" style="float:right;border:none;background:none;color:#e53935;cursor:pointer;padding:0 4px;">✕</button></div>'; }).join('') : '<div class="rel-mem-item rel-mem-empty">还没有记忆。聊几句自我介绍，Ta 就会记住并之后引用。</div>') + '</div></div>')
+      + '<div class="rel-mem"><div class="rel-mem-head">💬 对话历史<button class="cbtn cbtn-ghost" id="chatExport">导出对话</button><button class="cbtn cbtn-ghost" id="chatImport">恢复对话</button><button class="cbtn cbtn-ghost" id="chatClear" style="margin-left:6px;">清空对话</button></div>'
+      + '<div class="rel-mem-list" style="max-height:80px;"><div class="rel-mem-item rel-mem-empty">当前共 ' + state.history.length + ' 条消息（含你和' + c.name + '的对话）。「清空对话」只清聊天记录，长期记忆仍保留。</div></div>'
+      + '<input type="file" id="chatImportFile" accept=".txt,text/plain" style="display:none;" /></div>'
       + '</div>';
     document.body.appendChild(wrap);
     var onEsc = function(ev){ if(ev.key === 'Escape'){ close(); } };
@@ -2629,6 +2699,33 @@ ssRestoreView();
       a.click();
       URL.revokeObjectURL(a.href);
       toast('对话记录已导出');
+    });
+    var chatImport = document.getElementById('chatImport');
+    var chatImportFile = document.getElementById('chatImportFile');
+    if(chatImport) chatImport.addEventListener('click', function(){ if(chatImportFile) chatImportFile.click(); });
+    if(chatImportFile) chatImportFile.addEventListener('change', function(ev){
+      var f = ev.target.files[0]; if(!f) return;
+      var rd = new FileReader();
+      rd.onload = function(ev2){
+        var lines = String(ev2.target.result || '').split('\n');
+        var hist = [];
+        lines.forEach(function(l){
+          l = l.trim(); if(!l) return;
+          if(l.indexOf('我:') === 0) hist.push({ role:'user', content: l.slice(2).trim() });
+          else {
+            var i = l.indexOf(':');
+            if(i > 0 && l.slice(0,i).trim()) hist.push({ role:'assistant', content: l.slice(i+1).trim() });
+          }
+        });
+        if(!hist.length){ toast('没有识别到可恢复的对话记录'); return; }
+        state.history = hist;
+        persistSession();
+        rebuildChat();
+        toast('已恢复 ' + hist.length + ' 条对话记录');
+        close();
+      };
+      rd.readAsText(f);
+      chatImportFile.value = '';
     });
     var chatClear = document.getElementById('chatClear');
     if(chatClear) chatClear.addEventListener('click', function(){
@@ -2730,6 +2827,12 @@ ssRestoreView();
       + '.rel-hint{font-size:12px;color:var(--muted);margin:8px 0}'
       + '.rel-panel textarea{width:100%;box-sizing:border-box;border:1px solid var(--hair);border-radius:10px;padding:10px;font-size:13px;color:var(--ink);background:var(--surface);outline:none;line-height:1.5}'
       + '.rel-actions{display:flex;gap:8px;margin-top:10px;justify-content:flex-end}'
+      + '.scene-panel{padding:14px}'
+      + '.scene-panel .rel-head strong{font-size:14px}'
+      + '.scene-panel .cbtn{padding:5px 10px;font-size:12.5px;border-radius:8px}'
+      + '.scene-panel .rel-hint{font-size:11.5px;margin:6px 0}'
+      + '.scene-panel textarea{padding:7px 9px;font-size:13px}'
+      + '.scene-panel .rel-actions{margin-top:8px}'
       + '.rel-mem{margin-top:12px;border-top:1px dashed var(--hair);padding-top:10px}'
       + '.rel-mem-head{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;font-weight:600;margin-bottom:6px}'
       + '.rel-mem-list{max-height:120px;overflow:auto;display:flex;flex-direction:column;gap:4px}'
@@ -2815,8 +2918,7 @@ ssRestoreView();
     };
     app.addEventListener('click', app._coachTopicHandler);
     // 手动模式：不自动启动监听，等用户点麦克风按钮
-    // 每次进入语伴版块，先让用户设定本次对话的场合背景
-    openScenePanel();
+    // 进入版块不自动弹背景框；点击某个语伴时才弹出（由 coachSetRole 触发）
   };
 
   /* ---- 调试钩子（本地端到端验证用）：暴露自动选话题 / 检索 / 跨源索引 ---- */

@@ -135,6 +135,10 @@ a,button{-webkit-tap-highlight-color:transparent;touch-action:manipulation}
   background:var(--surface);border:1px solid var(--hair);border-radius:14px;
   padding:36px 22px 30px;text-align:center;position:relative;
 }
+/* 换卡时轻微淡入上移，让「翻页」看起来是一次过渡而不是闪一下 */
+@keyframes cardIn{from{opacity:.55;transform:translateY(3px)}to{opacity:1;transform:none}}
+.flashcard.anim{animation:cardIn .16s ease-out}
+@media (prefers-reduced-motion: reduce){ .flashcard.anim{animation:none} }
 .flashcard .pos{font-size:12.5px;color:var(--faint);letter-spacing:1px}
 .flashcard .word{
   font-family:Georgia,"Times New Roman",serif;
@@ -217,6 +221,7 @@ footer{
 .biling{
   position:relative;background:var(--surface);border:1px solid var(--hair);
   border-radius:var(--radius);padding:14px 16px;margin:10px 0;
+  cursor:pointer;transition:border-color .15s,box-shadow .15s,background .15s;
 }
 .biling.active{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
 .biling.done{background:#F3F6F5}
@@ -652,14 +657,14 @@ function renderHome(){
   }
 
   var dTotal = dueTotal(), hTotal = hardTotal();
-  if(dTotal || hTotal){
-    html += '<div class="subbar">'
-         + (dTotal ? '<a class="chip-btn on" href="#/review"><span class="dot"></span>待复习 <span class="num">' + dTotal + '</span></a>' : '')
-         + (hTotal ? '<a class="chip-btn" href="#/hard">⭐ 难词本 <span class="num">' + hTotal + '</span></a>' : '')
-         + '</div>';
-  }
 
-  html += '<div class="sect-title" id="sec-words">单词专题</div><div class="grid2">';
+  html += '<div class="sect-title" id="sec-words">单词专题</div>';
+  /* 跨全部专题统一入口：难词本 / 待复习（不按词表分开统计） */
+  html += '<div class="subbar">'
+       + '<a class="chip-btn' + (dTotal ? ' on' : '') + '" href="#/review">🔁 待复习（全部专题）<span class="num">' + dTotal + '</span></a>'
+       + '<a class="chip-btn' + (hTotal ? ' on' : '') + '" href="#/hard">⭐ 难词本（全部专题）<span class="num">' + hTotal + '</span></a>'
+       + '</div>';
+  html += '<div class="grid2">';
   WORD_DATA.forEach(function(s){
     var d = wordDoneCount(s.slug);
     var kind = s.kind || 'word';
@@ -718,6 +723,7 @@ function renderHome(){
 
 /* ================= 视图：单词学习 ================= */
 var curIdx = 0;
+var _studySlug = null;   // 记录上次渲染的词表，用于判断「翻词」还是「换词表」
 var searchTimer = null;
 
 function firstUnlearned(slug){
@@ -776,10 +782,60 @@ function wordBack(kind, w){
        + (w[3] ? '<div class="ex-cn">' + esc(w[3]) + '</div>' : '') + '</div>';
 }
 
+function studyCardHtml(s, kind, w, learned, hardOn){
+  return '<div class="flashcard anim">'
+       + (learned ? '<span class="done-mark">已学</span>' : '')
+       + '<div class="pos">' + (curIdx+1) + ' / ' + s.words.length + '</div>'
+       + cardBody(kind, w)
+       + '<div style="display:flex;gap:8px;justify-content:center;margin-top:14px">'
+       + '<button class="mini-btn" id="btnSound">🔊 朗读</button>'
+       + '<button class="mini-btn' + (hardOn ? ' on' : '') + '" id="btnHard">' + (hardOn ? '⭐ 已收进难词本' : '⭐ 太难') + '</button>'
+       + '</div></div>';
+}
+function bindCard(s, w){
+  var bs = $('btnSound');
+  if(bs) bs.onclick = function(){ stopSound(); speak(w[0]); };
+  var bh = $('btnHard');
+  if(bh) bh.onclick = function(){
+    toggleHard(s.slug, curIdx);
+    toast(isHard(s.slug, curIdx) ? '已收进难词本' : '已从难词本移除');
+    paintCard();
+    var hn = document.querySelector('#app .subbar a[href="#/hard"] .num');
+    if(hn) hn.textContent = hardTotal();
+  };
+}
+/* 只替换卡片本身，不重建整页：滚动位置不动、搜索框里输入的字不丢、没有闪屏 */
+function paintCard(){
+  var s = findWordSet(route.slug);
+  if(!s) return;
+  var kind = s.kind || 'word';
+  if(typeof curIdx !== 'number' || isNaN(curIdx)) curIdx = 0;
+  var w = s.words[curIdx];
+  if(!w) return;
+  var learned = isLearned(s.slug, curIdx), hardOn = isHard(s.slug, curIdx);
+  var old = document.querySelector('#app .flashcard');
+  if(old){
+    var tmp = document.createElement('div');
+    tmp.innerHTML = studyCardHtml(s, kind, w, learned, hardOn);
+    var fresh = tmp.firstElementChild;
+    if(fresh) old.parentNode.replaceChild(fresh, old);
+  }
+  var mk = $('btnMark');
+  if(mk){ mk.className = 'btn-mark' + (learned ? ' off' : ''); mk.textContent = learned ? '撤销已学' : '标记已学'; }
+  var dn = document.querySelector('#app .subbar a[href^="#/review"] .num');
+  if(dn) dn.textContent = dueCount(s.slug);
+  bindCard(s, w);
+  ssSetPos('w', s.slug, curIdx);
+}
 function renderStudy(){
   var s = findWordSet(route.slug);
   if(!s){ redirectTo('#/'); return; }
   if(typeof curIdx !== 'number' || isNaN(curIdx)) curIdx = firstUnlearned(s.slug);
+  /* 同一词表内翻词时保留滚动位置，避免换卡瞬间页面跳动（表现为「闪一下」）；
+     切换词表才回到顶部 */
+  var keepScroll = (_studySlug === s.slug);
+  var prevY = window.pageYOffset || 0;
+  _studySlug = s.slug;
   var kind = s.kind || 'word';
   var d = wordDoneCount(s.slug);
   var html = '';
@@ -792,24 +848,16 @@ function renderStudy(){
          : '搜索短语 / 中文 / 例句…';
   html += '<div class="searchbox"><input id="q" type="search" placeholder="' + esc(ph) + '"></div>';
   html += '<div class="search-results" id="sres" style="display:none"></div>';
-  var dueN = dueCount(s.slug), hardN = hardCount(s.slug);
+  var dueN = dueCount(s.slug), hardNall = hardTotal();
   html += '<div class="subbar">'
-       + '<a class="chip-btn' + (dueN ? ' on' : '') + '" href="#/review/' + s.slug + '">🔁 待复习 <span class="num">' + dueN + '</span></a>'
-       + '<a class="chip-btn' + (hardN ? ' on' : '') + '" href="#/hard/' + s.slug + '">⭐ 难词本 <span class="num">' + hardN + '</span></a>'
+       + '<a class="chip-btn' + (dueN ? ' on' : '') + '" href="#/review/' + s.slug + '">🔁 本专题待复习 <span class="num">' + dueN + '</span></a>'
+       + '<a class="chip-btn' + (hardNall ? ' on' : '') + '" href="#/hard">⭐ 难词本（全部）<span class="num">' + hardNall + '</span></a>'
        + '</div>';
 
   var w = s.words[curIdx];
   var learned = isLearned(s.slug, curIdx);
-  var body = cardBody(kind, w);
   var hardOn = isHard(s.slug, curIdx);
-  html += '<div class="flashcard">'
-       + (learned ? '<span class="done-mark">已学</span>' : '')
-       + '<div class="pos">' + (curIdx+1) + ' / ' + s.words.length + '</div>'
-       + body
-       + '<div style="display:flex;gap:8px;justify-content:center;margin-top:14px">'
-       + '<button class="mini-btn" id="btnSound">🔊 朗读</button>'
-       + '<button class="mini-btn' + (hardOn ? ' on' : '') + '" id="btnHard">' + (hardOn ? '⭐ 已收进难词本' : '⭐ 太难') + '</button>'
-       + '</div></div>';
+  html += studyCardHtml(s, kind, w, learned, hardOn);
 
   html += '<div class="controls">'
        + '<button class="btn-nav" id="btnPrev">上一个</button>'
@@ -817,20 +865,30 @@ function renderStudy(){
        + '<button class="btn-nav" id="btnNext">下一个</button></div>';
   html += '<div class="hint">← → 切换 · 空格 / 回车 标记已学</div>';
   $('app').innerHTML = html;
+  /* 翻词时维持滚动位置；换词表时回到顶部。
+     在下一帧再校一次，避免内容高度变化后浏览器把滚动位置夹回顶部（表现为闪动） */
+  function restoreScroll(y){
+    var el = document.documentElement;
+    var max = Math.max((el.scrollHeight || 0) - window.innerHeight, 0);
+    window.scrollTo(0, Math.max(0, Math.min(y, max)));
+  }
+  if(keepScroll && prevY > 0){
+    restoreScroll(prevY);
+    /* 新内容刚插入时高度可能还没算完，补两次校正，避免被夹回顶部 */
+    setTimeout(function(){ restoreScroll(prevY); }, 0);
+    setTimeout(function(){ restoreScroll(prevY); }, 60);
+  }else if(!keepScroll){
+    window.scrollTo(0, 0);
+  }
 
-  $('btnPrev').onclick = function(){ curIdx = nextUnlearned(s.slug, curIdx, -1); renderStudy(); };
-  $('btnNext').onclick = function(){ curIdx = nextUnlearned(s.slug, curIdx, 1); renderStudy(); };
-  $('btnSound').onclick = function(){ stopSound(); speak(w[0]); };
-  $('btnHard').onclick = function(){
-    toggleHard(s.slug, curIdx);
-    toast(isHard(s.slug, curIdx) ? '已收进难词本' : '已从难词本移除');
-    renderStudy();
-  };
+  $('btnPrev').onclick = function(){ curIdx = nextUnlearned(s.slug, curIdx, -1); paintCard(); };
+  $('btnNext').onclick = function(){ curIdx = nextUnlearned(s.slug, curIdx, 1); paintCard(); };
+  bindCard(s, w);
   $('btnMark').onclick = function(){
     toggleWord(s.slug, curIdx);
     toast(isLearned(s.slug,curIdx) ? '已标记' : '已撤销');
     if(isLearned(s.slug,curIdx)){ curIdx = nextUnlearned(s.slug, curIdx, 1); }
-    renderStudy();
+    paintCard();
   };
   $('btnReset').onclick = function(){
     if(confirm('确定清空本专题全部已学进度？')){ resetWords(s.slug); curIdx = 0; renderStudy(); toast('进度已重置'); }
@@ -1149,13 +1207,65 @@ function renderChapterFlow(){
   });
 
   function go(idx){ apecCur = idx; renderChapterFlow(); }
-  $('btnPrev').onclick = function(){ go((apecCur-1+bl.length)%bl.length); };
-  $('btnNext').onclick = function(){ go((apecCur+1)%bl.length); };
+  /* 章节前后跳转：本章到头/到尾时自动进上一章/下一章，不用回目录 */
+  function chapIndex(){
+    for(var i=0;i<bk.chapters.length;i++){ if(bk.chapters[i].cid === c.cid) return i; }
+    return -1;
+  }
+  function goChapter(delta, toEnd){
+    var i = chapIndex() + delta;
+    if(i < 0 || i >= bk.chapters.length) return false;
+    var nc = bk.chapters[i];
+    var nbl = apecBilingualList(nc.blocks);
+    var target = toEnd ? Math.max(0, nbl.length - 1) : 0;
+    ssSetPos('a', bk.bookId + '|' + nc.cid, target);   // 先存位置，render 会读它
+    apecCur = target;
+    nav('#/books/' + bk.bookId + '/' + nc.cid);
+    toast((delta > 0 ? '已进入下一章：' : '已回到上一章：') + nc.title);
+    return true;
+  }
+  /* 点击任意一句 = 选中该句并显示外框（与「下一条」等效） */
+  function paintActive(){
+    document.querySelectorAll('.flow .biling').forEach(function(r){
+      r.classList.toggle('active', (+r.getAttribute('data-k')) === apecCur);
+    });
+    var mk = document.getElementById('btnMark');
+    if(mk){
+      var dn = arr.indexOf(apecCur) !== -1;
+      mk.className = 'btn-mark' + (dn ? ' off' : '');
+      mk.textContent = dn ? '撤销已学' : '标记已学';
+    }
+    var h = document.querySelector('.hint');
+    if(h) h.textContent = '← → 切换 · 空格 / 回车 标记已学 · 当前第 ' + (apecCur+1) + ' / ' + bl.length + ' 条';
+    ssSetPos('a', bk.bookId + '|' + c.cid, apecCur);
+  }
+  document.querySelectorAll('.flow .biling').forEach(function(r){
+    r.onclick = function(ev){
+      var isSay = ev && ev.target && ev.target.closest && ev.target.closest('.sayb');
+      var k2 = +r.getAttribute('data-k');
+      if(isNaN(k2)) return;
+      if(k2 === apecCur){ if(!isSay) return; }
+      else { apecCur = k2; paintActive(); }
+      if(!isSay && r.scrollIntoView){ r.scrollIntoView({block:'nearest', behavior:'smooth'}); }
+    };
+  });
+  $('btnPrev').onclick = function(){
+    if(apecCur > 0){ go(apecCur - 1); return; }
+    if(!goChapter(-1, true)) toast('已经是第一章的第一条');
+  };
+  $('btnNext').onclick = function(){
+    if(apecCur < bl.length - 1){ go(apecCur + 1); return; }
+    if(!goChapter(1, false)) toast('已经是最后一章的最后一条');
+  };
   $('btnMark').onclick = function(){
     var wasDone = arr.indexOf(apecCur)!==-1;
     apecToggle(bk.bookId, c.cid, apecCur);
     toast(wasDone ? '已撤销' : '已标记');
-    if(!wasDone && apecCur < bl.length-1){ apecCur++; }
+    if(!wasDone){
+      ssSetPos('a', bk.bookId + '|' + c.cid, apecCur);
+      if(apecCur < bl.length-1){ go(apecCur + 1); return; }
+      if(goChapter(1, false)) return;   // 本章最后一条：自动进下一章
+    }
     renderChapterFlow();
   };
   $('btnResetChap').onclick = function(){

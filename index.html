@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#0F766E">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -906,7 +906,7 @@ function render(){
   }else if(route.view === 'coach'){
     if(typeof window.renderCoach === 'function'){ window.renderCoach(); }
   }else if(route.view === 'write'){
-    renderWrite();
+    if(typeof window.renderWrite === 'function'){ window.renderWrite(); }
   }else{
     if(route.view === 'words') homeTarget = 'sec-words';
     else if(route.view === 'pods') homeTarget = 'sec-pods';
@@ -1270,6 +1270,14 @@ ssRestoreView();
     }
   }
 
+  function copyWriteText(){
+    var text = JSON.stringify(load(), null, 2);
+    var msg = '日记备份已复制，可粘贴到备忘录保存';
+    function legacyCopy(){ var ta=document.createElement('textarea'); ta.value=text; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.focus(); ta.select(); var ok=false; try{ ok=document.execCommand('copy'); }catch(e){ ok=false; } document.body.removeChild(ta); return ok; }
+    if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(function(){ toast(msg); }).catch(function(){ toast(legacyCopy()?msg:'复制失败'); }); }
+    else { toast(legacyCopy()?msg:'复制失败'); }
+  }
+
   function bindWrite(app){
     var inp=app.querySelector('#writeSearch');
     if(inp) inp.oninput=function(){
@@ -1280,12 +1288,8 @@ ssRestoreView();
       listEl.innerHTML = filtered.length ? filtered.map(cardHtml).join('') : '<div class="write-empty">没有匹配的日记。</div>';
     };
     var n=app.querySelector('#writeNew'); if(n) n.onclick=function(){ openModal(null,''); };
-    var ej=app.querySelector('#writeExportJSON'); if(ej) ej.onclick=exportJSON;
-    var em=app.querySelector('#writeExportMD'); if(em) em.onclick=exportMD;
-    var imp=app.querySelector('#writeImport'); var file=app.querySelector('#writeImportFile');
-    if(imp) imp.onclick=function(){ if(file) file.click(); };
+    var ck=app.querySelector('#writeCopy'); if(ck) ck.onclick=copyWriteText;
     var pj=app.querySelector('#writePaste'); if(pj) pj.onclick=pasteImport;
-    if(file) file.onchange=function(){ if(file.files && file.files[0]) importFile(file.files[0]); file.value=''; };
     var listEl=app.querySelector('#writeList');
     if(listEl) listEl.addEventListener('click', function(ev){
       var b=ev.target.closest ? ev.target.closest('button[data-act]') : null; if(!b) return;
@@ -1312,14 +1316,11 @@ ssRestoreView();
       +   '<div class="write-toolbar">'
       +     '<input id="writeSearch" placeholder="搜索标题 / 正文关键词">'
       +     '<button class="wbtn wbtn-primary" id="writeNew">＋ 写一篇</button>'
-      +     '<button class="wbtn" id="writeExportJSON">导出 JSON</button>'
-      +     '<button class="wbtn" id="writeExportMD">导出 MD</button>'
-      +     '<button class="wbtn" id="writeImport">导入</button>'
-      +     '<button class="wbtn" id="writePaste">📋 粘贴导入</button>'
+      +     '<button class="wbtn" id="writeCopy">📋 复制备份</button>'
+      +     '<button class="wbtn" id="writePaste">📋 粘贴恢复</button>'
       +   '</div>'
       + '</div>'
       + '<div id="writeList">' + (list.length ? list.map(cardHtml).join('') : '<div class="write-empty">还没有日记。点「＋ 写一篇」，用英文写点今天的想法。</div>') + '</div>'
-      + '<input type="file" id="writeImportFile" accept=".json,.md" style="display:none">'
       + '</div>';
     app.innerHTML=html;
     bindWrite(app);
@@ -2644,8 +2645,10 @@ ssRestoreView();
       + '<p class="rel-hint">写在这里的进展，每次对话都会注入给「' + esc(c.name) + '」，让 Ta 记得你们之间的事、越聊越熟。存于本机浏览器。</p>'
       + '<textarea id="relText" rows="6" placeholder="例如：见过 2 次、还没合作、印象不错…">' + esc(getRel(state.role)) + '</textarea>'
       + '<div class="rel-actions"><button class="cbtn" id="relSave">保存</button><button class="cbtn cbtn-ghost" id="relReset">恢复默认</button></div>'
-      + (isMemoryless(state.role) ? '' : '<div class="rel-mem"><div class="rel-mem-head">🧠 长期记忆（Ta 从你跨会话说的话里自动记下的）<button class="cbtn cbtn-ghost" id="memClear">清空记忆</button></div>'
-      + '<div class="rel-mem-list">' + (loadMem(state.role).length ? loadMem(state.role).map(function(s, i){ return '<div class="rel-mem-item" data-mem-idx="' + i + '">' + esc(s) + ' <button class="mem-del" data-mem-idx="' + i + '" style="float:right;border:none;background:none;color:#e53935;cursor:pointer;padding:0 4px;">✕</button></div>'; }).join('') : '<div class="rel-mem-item rel-mem-empty">还没有记忆。聊几句自我介绍，Ta 就会记住并之后引用。</div>') + '</div></div>')
+      + (isMemoryless(state.role) ? '' : '<div class="rel-mem"><div class="rel-mem-head">🧠 长期记忆（Ta 从你跨会话说的话里自动记下的）</div>'
+      + '<div class="rel-mem-list">' + (loadMem(state.role).length ? loadMem(state.role).map(function(s, i){ return '<div class="rel-mem-item" data-mem-idx="' + i + '">' + esc(s) + ' <button class="mem-del" data-mem-idx="' + i + '" style="float:right;border:none;background:#ffe1e1;color:#e53935;cursor:pointer;width:20px;height:20px;border-radius:50%;font-size:12px;line-height:20px;text-align:center;padding:0;">✕</button></div>'; }).join('') : '<div class="rel-mem-item rel-mem-empty">还没有记忆。聊几句自我介绍，Ta 就会记住并之后引用。</div>') + '</div></div>')
+      + '<div class="rel-mem"><div class="rel-mem-head">💾 备份/恢复<button class="cbtn cbtn-ghost" id="relCopy">📋 复制备份</button><button class="cbtn cbtn-ghost" id="relPaste">📥 粘贴恢复</button></div>'
+      + '<div class="rel-mem-list"><div class="rel-mem-item rel-mem-empty">备份这个语伴的对话历史、长期记忆、关系档案。点「📋 复制备份」存到备忘录，换机或清缓存后「📥 粘贴恢复」。</div></div></div>'
       + '<div class="rel-mem"><div class="rel-mem-head">💬 对话历史<button class="cbtn cbtn-ghost" id="chatExport">导出对话</button><button class="cbtn cbtn-ghost" id="chatImport">恢复对话</button><button class="cbtn cbtn-ghost" id="chatClear" style="margin-left:6px;">清空对话</button></div>'
       + '<div class="rel-mem-list" style="max-height:80px;"><div class="rel-mem-item rel-mem-empty">当前共 ' + state.history.length + ' 条消息（含你和' + c.name + '的对话）。「清空对话」只清聊天记录，长期记忆仍保留。</div></div>'
       + '<input type="file" id="chatImportFile" accept=".txt,text/plain" style="display:none;" /></div>'
@@ -2663,12 +2666,6 @@ ssRestoreView();
       var c2 = companion(state.role);
       if(c2.relationship){ saveRel(state.role, c2.relationship.initial); document.getElementById('relText').value = c2.relationship.initial; }
     });
-    var memClear = document.getElementById('memClear');
-    if(memClear) memClear.addEventListener('click', function(){
-      clearMem(state.role); toast('已清空这个语伴的记忆'); 
-      var list = document.querySelector('#relPanel .rel-mem-list');
-      if(list) list.innerHTML = '<div class="rel-mem-item rel-mem-empty">还没有记忆。聊几句自我介绍，Ta 就会记住并之后引用。</div>';
-    });
     // 删除单条记忆
     wrap.querySelectorAll('.mem-del').forEach(function(btn){
       btn.addEventListener('click', function(){
@@ -2685,6 +2682,27 @@ ssRestoreView();
           toast('已删除这条记忆');
         }
       });
+    });
+    var relCopy = document.getElementById('relCopy');
+    if(relCopy) relCopy.addEventListener('click', function(){
+      var text = JSON.stringify({ version:1, role:state.role, history: loadHist(state.role), memory: loadMem(state.role), relationship: getRel(state.role) }, null, 2);
+      var msg = '备份已复制，可粘贴到备忘录保存';
+      function legacyCopy(){ var ta=document.createElement('textarea'); ta.value=text; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.focus(); ta.select(); var ok=false; try{ ok=document.execCommand('copy'); }catch(e){ ok=false; } document.body.removeChild(ta); return ok; }
+      if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(function(){ toast(msg); }).catch(function(){ toast(legacyCopy()?msg:'复制失败'); }); }
+      else { toast(legacyCopy()?msg:'复制失败'); }
+    });
+    var relPaste = document.getElementById('relPaste');
+    if(relPaste) relPaste.addEventListener('click', function(){
+      var text = prompt('把「📋 复制备份」得到的 JSON 粘贴到这里，点确定恢复：');
+      if(!text || !text.trim()) return;
+      try{
+        var d = JSON.parse(text);
+        if(!d || !d.role || d.role !== state.role) throw new Error('不是这个语伴的备份');
+        if(d.history && Array.isArray(d.history)) try{ localStorage.setItem(histKey(state.role), JSON.stringify(d.history)); }catch(e){}
+        if(d.memory && Array.isArray(d.memory)) try{ localStorage.setItem(memKey(state.role), JSON.stringify(d.memory)); }catch(e){}
+        if(typeof d.relationship === 'string') try{ localStorage.setItem(relKey(state.role), d.relationship); }catch(e){}
+        toast('恢复成功！刷新页面后生效'); close();
+      }catch(err){ toast('恢复失败：不是有效的备份文本'); }
     });
     var chatExport = document.getElementById('chatExport');
     if(chatExport) chatExport.addEventListener('click', function(){
@@ -2831,7 +2849,7 @@ ssRestoreView();
       + '.scene-panel .rel-head strong{font-size:14px}'
       + '.scene-panel .cbtn{padding:5px 10px;font-size:12.5px;border-radius:8px}'
       + '.scene-panel .rel-hint{font-size:11.5px;margin:6px 0}'
-      + '.scene-panel textarea{padding:7px 9px;font-size:13px}'
+      + '.scene-panel textarea{padding:7px 9px;font-size:16px}'
       + '.scene-panel .rel-actions{margin-top:8px}'
       + '.rel-mem{margin-top:12px;border-top:1px dashed var(--hair);padding-top:10px}'
       + '.rel-mem-head{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;font-weight:600;margin-bottom:6px}'
@@ -2849,7 +2867,6 @@ ssRestoreView();
       +     '<button class="cbtn' + (state.auto?' active':'') + '" id="coachAuto">' + (state.auto?'✨ 自动匹配':'📌 手动选话题') + '</button>'
       +     (isMemoryless(state.role) ? '' : '<button class="cbtn cbtn-ghost" id="coachRel">📋 关系档案</button>')
       +     '<button class="cbtn cbtn-ghost" id="coachVoicePicker">🎙️ 音色</button>'
-      +     '<button class="cbtn cbtn-ghost" id="coachBackup">💾 备份/恢复</button>'
       +   '</div>'
       +   '<div class="tgroup"><div class="tgroup-name">生活话题</div><div class="ctopic-row">' + lifeHtml + '</div></div>'
       +   '<div id="coachTopics">' + buildTopicGroups(state.role) + '</div>'
@@ -2897,8 +2914,6 @@ ssRestoreView();
     document.getElementById('coachAuto').addEventListener('click', toggleAuto);
     var _relBtn = document.getElementById('coachRel');
     if(_relBtn) _relBtn.addEventListener('click', openRelPanel);
-    var backupBtn = document.getElementById('coachBackup');
-    if(backupBtn) backupBtn.addEventListener('click', openBackupPanel);
     var hintBtn = document.getElementById('coachHint');
     if(hintBtn) hintBtn.addEventListener('click', coachHint);
     var reBtn = document.getElementById('coachRehear'); if(reBtn) reBtn.addEventListener('click', coachRehear);

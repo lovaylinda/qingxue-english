@@ -2250,7 +2250,7 @@ ssRestoreView();
   ];
 
   var state = { role:'nicole', topics:['通用日常'], auto:true, history:[], tipSeen:{}, rel:{}, sessionScene:'' };
-  var rec = null, finalText = '', micOn = false, aiBusy = false, lastAIText = '', ttsOn = true;
+  var rec = null, finalText = '', micOn = false, aiBusy = false, lastAIText = '', ttsOn = true, ttsWarned = false;
   /* 语音交互设计（手动流程，无任何时间限制）：
      点🎤开麦说话 → 再点🎤结束 → 识别结果进输入框
      → 你核对/修改 → 手动点「发送」→ AI 回复文字+语音自动播出 */
@@ -2800,13 +2800,44 @@ ssRestoreView();
     try{ window.speechSynthesis.cancel(); }catch(e){}
     if(currentAudio){ try{ currentAudio.pause(); }catch(e){} currentAudio = null; }
   }
-  function speakBrowser(text, onDone){
+  /* 云端 TTS 没打通时的兜底：用手机自带朗读。
+     以前这里固定 rate/pitch=1、不选 voice，导致 6 个语伴全是同一个系统女声；
+     现在按音色 id 分配系统音色 + 音高/语速，至少能听出「不是同一个人」。 */
+  var VOICE_TUNE = {
+    luna:    { pitch:1.10, rate:1.00 },
+    asteria: { pitch:1.25, rate:1.06 },
+    athena:  { pitch:0.95, rate:0.94 },
+    cora:    { pitch:1.35, rate:1.02 },
+    apollo:  { pitch:0.70, rate:0.95 },
+    arcas:   { pitch:0.85, rate:1.03 },
+    hermes:  { pitch:0.90, rate:1.00 },
+    jupiter: { pitch:0.60, rate:0.92 }
+  };
+  var _sysVoices = null;
+  function systemVoiceFor(id){
+    try{
+      var all = window.speechSynthesis.getVoices() || [];
+      if(!all.length) return null;
+      var en = all.filter(function(v){ return /^en([-_]|$)/i.test(v.lang || ''); });
+      if(!en.length) en = all;
+      if(_sysVoices !== en) _sysVoices = en;
+      var seed = 0, s = String(id || 'x');
+      for(var i=0;i<s.length;i++) seed = (seed * 31 + s.charCodeAt(i)) % 100003;
+      return en[seed % en.length];
+    }catch(e){ return null; }
+  }
+  function speakBrowser(text, onDone, voiceId, speed){
     var finished = false;
     function done(){ if(finished) return; finished = true; if(onDone) onDone(); }
     if(!window.speechSynthesis){ done(); return; }
     try{ window.speechSynthesis.cancel(); }catch(e){}
+    var tune = VOICE_TUNE[voiceId] || { pitch:1, rate:1 };
     var u = new SpeechSynthesisUtterance(text);
-    u.lang = 'en-US'; u.rate = 1; u.pitch = 1;
+    var sv = systemVoiceFor(voiceId);
+    if(sv){ try{ u.voice = sv; }catch(e){} }
+    u.lang = (sv && sv.lang) || 'en-US';
+    u.pitch = tune.pitch;
+    u.rate = Math.max(0.6, Math.min(1.6, (speed || 1) * tune.rate));
     u.onend = done; u.onerror = done;
     window.speechSynthesis.speak(u);
     setTimeout(done, 4000 + text.length * 120);
@@ -2878,20 +2909,40 @@ ssRestoreView();
     var speed = uv ? uv.speed : (c.voiceSpeed || 1);
     var key = voice + '|' + speed + '|' + text;
     if(ttsCache[key]){ playTtsUrl(ttsCache[key], onDone); return; }
-    if(!(configured && voice && window.fetch)){ speakBrowser(text, onDone); return; }
+    if(!(configured && voice && window.fetch)){ speakBrowser(text, onDone, voice, speed); return; }
+    function fallback(msg){
+      /* 只提示一次，免得每句话都弹 */
+      if(!ttsWarned){
+        ttsWarned = true;
+        toast(msg || '云端语音没响应，已改用手机自带朗读（音色会不跟随设置）');
+      }
+      speakBrowser(text, onDone, voice, speed);
+    }
     function fetchAndPlay(){
       var ttsCtrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
       var ttsTimer = ttsCtrl ? setTimeout(function(){ try{ ttsCtrl.abort(); }catch(e){} }, 15000) : null;
       fetch(WORKER_URL + '/tts', {
         method:'POST',
         headers:{'Content-Type':'application/json','X-App-Key':APP_KEY},
-        body: JSON.stringify({ text: text, voice: voice, speed: speed }),
+        /* speaker 和 voice 都传：旧版 worker 只认 speaker，新版两个都认，避免音色被忽略后全落到默认女声 */
+        body: JSON.stringify({ text: text, speaker: voice, voice: voice, speed: speed }),
         signal: ttsCtrl ? ttsCtrl.signal : undefined
       }).then(function(res){
-        if(!res.ok) throw new Error('HTTP ' + res.status);
+        if(!res.ok){
+          return res.text().then(function(t){
+            var e = new Error('HTTP ' + res.status + ' ' + String(t || '').slice(0, 60));
+            e.status = res.status;
+            throw e;
+          }, function(){ var e = new Error('HTTP ' + res.status); e.status = res.status; throw e; });
+        }
         return res.blob();
       }).then(function(blob){
         if(ttsTimer) clearTimeout(ttsTimer);
+        /* 防御：额度用完时部分情况会回 200 + 文本，不能拿去当音频播 */
+        if(!blob || !blob.size || (blob.type && blob.type.indexOf('audio') === -1)){
+          throw new Error('不是音频（' + (blob && blob.type) + '）');
+        }
+        ttsWarned = false;
         var url = URL.createObjectURL(blob);
         cachePut(key, url);
         cachePutPersistent(key, blob);
@@ -2899,7 +2950,9 @@ ssRestoreView();
       }).catch(function(err){
         if(ttsTimer) clearTimeout(ttsTimer);
         if(err && err.name === 'AbortError') return;
-        speakBrowser(text, onDone);
+        if(err && err.status === 429) return fallback('今日免费语音额度用完了，先用手机自带朗读顶一下');
+        if(err && err.status === 401) return fallback('语音接口口令不对（worker 的 APP_KEY 和网页不一致）');
+        fallback('');
       });
     }
     // 内存缓存没有 → 查持久缓存 → 都没有才真正请求（花钱的只有最后一步）
@@ -3499,7 +3552,7 @@ ssRestoreView();
     }
     panel.innerHTML = '<div class="rel-panel" style="max-width:380px;">'
       + '<div class="rel-head"><strong>🎙️ 给「' + esc(c.name) + '」选个声音</strong><button class="cbtn cbtn-ghost" id="vpClose">✕</button></div>'
-      + '<p class="rel-hint">先点选你喜欢的音色，再点底部保存按钮。</p>'
+      + '<p class="rel-hint">先点选你喜欢的音色，再点底部保存按钮。若换了音色听起来还是同一个人，说明云端语音没连上（走的是手机自带朗读），会在聊天里提示一次。</p>'
       + '<div class="vp-items">' + renderItems() + '</div>'
       + '<div style="margin-top:12px;text-align:center;">'
       + '<button class="cbtn" id="vpSave" style="background:#4f46e5;color:#fff;padding:8px 24px;border-radius:8px;">✅ 保存并试听</button>'
@@ -3948,7 +4001,10 @@ ssRestoreView();
     indexFams: function(t){ var e = _crossIndex[t]; return e ? Object.keys(e.fam).sort() : []; },
     indexSample: function(t, n){ return (_crossIndex[t] ? _crossIndex[t].list : []).slice(0, n || 8).map(function(it){ return '(' + it.label + ') ' + it.en; }); },
     indexTopics: function(){ return Object.keys(_crossIndex).sort(); },
-    loaded: loadedSet
+    loaded: loadedSet,
+    /* 手动触发一次朗读（排查音色用）：默认读当前语伴，也可传 voiceId 临时指定 */
+    say: function(t){ return coachSpeak(t || 'Voice test.', function(){}); },
+    resetTtsWarn: function(){ ttsWarned = false; }
   };
 })();
 /* 单词学习页：左右滑屏翻页（左滑=下一个，右滑=上一个，与按钮等效）

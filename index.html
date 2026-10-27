@@ -1392,7 +1392,7 @@ ssRestoreView();
     { file:'./docs_dialogues.js', topics:['点餐美食','出国场景','出国过境英语','点餐美食补充','旅行出差'] }
   ];
 
-  var state = { role:'nicole', topics:['通用日常'], auto:true, history:[], tipSeen:{}, rel:{}, sessionScene:'', sessionClient:'' };
+  var state = { role:'nicole', topics:['通用日常'], auto:true, history:[], tipSeen:{}, rel:{}, sessionScene:'' };
   var rec = null, finalText = '', silenceTimer = null, micOn = false, aiBusy = false, lastAIText = '', ttsOn = true;
   var handsFree = false, abortCtrl = null, currentAudio = null, travelerId = null;
   var requestId = 0;  // 跟踪请求：切换角色时旧请求回调直接丢弃
@@ -1541,10 +1541,7 @@ ssRestoreView();
     }
     /* 本次会话场景背景（每次启动由用户设定，只作用于本轮） */
     if(state.sessionScene && state.sessionScene.trim()){
-      sys += '\n\nSCENE & CONTEXT (set by the user for THIS conversation only):\n' + state.sessionScene + '\nOpen and steer the conversation around this scene naturally.';
-    }
-    if(role === 'ahmet' && state.sessionClient && state.sessionClient.trim()){
-      sys += '\n\nCLIENT PROFILE (the overseas client you are now playing — set by the user for THIS conversation only):\n' + state.sessionClient.trim() + '\nFully become this specific client now: name, gender, company role and the business context. Speak and act as this exact person for this whole conversation.';
+      sys += '\n\nSCENE & CONTEXT (set by the user for THIS conversation only — the setting, the people involved and what to talk about):\n' + state.sessionScene + (role === 'ahmet' ? '\nFully become the person the user described and steer the conversation around this scene naturally.' : '\nOpen and steer the conversation around this scene naturally.');
     }
     sys += '\n\nLANGUAGE: Natural everyday English, short sentences (10-15 words). No baby talk, no obscure slang. One natural expression when it fits. Never correct her grammar.';
     return sys;
@@ -2322,7 +2319,6 @@ ssRestoreView();
     resetChatUI();
     var c = companion(r);
     state.sessionScene = '';
-    state.sessionClient = '';
     openScenePanel();
   }
 
@@ -2370,7 +2366,7 @@ ssRestoreView();
       return scene ? (h + ' So let\u2019s talk about what you have in mind — where shall we start?') : (h + ' Where are you off to today?');
     }
     if(role === 'ahmet'){
-      var cp = state.sessionClient ? state.sessionClient.trim() : '';
+      var cp = state.sessionScene ? state.sessionScene.trim() : '';
       if(cp){
         var who = (cp.match(/[A-Za-z][A-Za-z .'\-]*/) || [''])[0].trim() || (cp.split(/[\s，,、]/)[0] || 'your client');
         return 'Hello! I\u2019m ' + who + '. Good to finally connect — so, let me get straight to our business today.';
@@ -2380,10 +2376,9 @@ ssRestoreView();
     var head = welcomeFor(role);
     return scene ? (head + ' I\u2019m all ears — tell me about it and let\u2019s dig in.') : head;
   }
-  function startNewSession(scene, client, openBy){
+  function startNewSession(scene, openBy){
     state.history = [];
-    state.sessionScene = (scene || '').slice(0, 400);
-    state.sessionClient = (client || '').slice(0, 300);
+    state.sessionScene = (scene || '').slice(0, 800);
     var matched = sceneMatchTopics(state.sessionScene);
     matched.forEach(function(t){ if(state.topics.indexOf(t) < 0) state.topics.push(t); });
     if(!matched.length && !state.topics.length) state.topics = ['通用日常'];
@@ -2414,9 +2409,8 @@ ssRestoreView();
     var openBy = isTrade ? 'user' : 'ai';   // 外贸客户固定你先说；其余默认语伴先说
     wrap.innerHTML = '<div class="rel-panel" style="max-width:540px;">'
       + '<div class="rel-head"><strong>🕊️ 和「' + esc(c.name) + '」开始一段新对话</strong><button class="cbtn cbtn-ghost" id="sceneClose">✕</button></div>'
-      + '<p class="rel-hint">先告诉我这次对话的<b>场合和背景</b>' + (isTrade ? '和<b>客户人物背景</b>' : '') + '（中文或英文都行）。我会自动匹配话题，然后' + (isTrade ? '由你先开口，语伴会以设定的客户身份回应' : '选择开场方式：由你先说，或语伴先说') + '。</p>'
-      + '<textarea id="sceneText" rows="3" placeholder="例如：我正要给一位美国客户开电话会介绍一款牙科铣刀 / 我在机场准备值机 / 周末想聊聊上次的瑜伽课"></textarea>'
-      + (isTrade ? '<textarea id="sceneClient" rows="2" placeholder="客户人物背景（外贸客户专用）：例如：美国采购经理 Jack，男，负责齿科耗材采购，正询一款车针的报价"></textarea>' : '')
+      + '<p class="rel-hint">先输入这次对话的<b>聊天背景</b>（中文或英文都行，可包含场合、人物、想聊的内容等）。我会自动匹配话题，然后' + (isTrade ? '由你先开口，语伴会以你设定的身份回应' : '选择开场方式：由你先说，或语伴先说') + '。</p>'
+      + '<textarea id="sceneText" rows="4" placeholder="例如：我要给一位美国客户介绍车针报价，我是Linda（牙科铣刀出口商），对方是美国采购经理 Jack，正询一款车针的价格 / 我在机场准备值机 / 周末想聊聊瑜伽课"></textarea>'
       + (isTrade ? ''
           : '<div class="rel-openrow" style="display:flex;align-items:center;gap:6px;margin:6px 0 2px;"><span style="font-size:12px;opacity:.7;">开场方式：</span>'
             + '<button class="cbtn cbtn-ghost" id="sceneOpenAI">🤖 语伴先说</button>'
@@ -2436,11 +2430,10 @@ ssRestoreView();
     if(oa) oa.addEventListener('click', function(){ openBy = 'ai'; paintOpen(); });
     if(ou) ou.addEventListener('click', function(){ openBy = 'user'; paintOpen(); });
     paintOpen();
-    document.getElementById('sceneSkip').addEventListener('click', function(){ wrap.remove(); startNewSession('', '', openBy); });
+    document.getElementById('sceneSkip').addEventListener('click', function(){ wrap.remove(); startNewSession('', openBy); });
     document.getElementById('sceneStart').addEventListener('click', function(){
       var s = document.getElementById('sceneText').value.trim();
-      var cl = (document.getElementById('sceneClient') ? document.getElementById('sceneClient').value : '').trim();
-      wrap.remove(); startNewSession(s, cl, openBy);
+      wrap.remove(); startNewSession(s, openBy);
     });
     var st = document.getElementById('sceneText');
     if(st){ st.focus(); st.addEventListener('keydown', function(ev){ if(ev.key === 'Enter' && !ev.shiftKey){ ev.preventDefault(); document.getElementById('sceneStart').click(); } }); }

@@ -345,6 +345,8 @@ function prepareWordData(d){
     var IDX = d.idx || {};
     for(var j=0;j<d.sets.length;j++){
       var s = d.sets[j];
+      /* 已并入「母语大全」的老表：只留 keys 供旧进度迁移时反查词形，不展开、不上页面 */
+      if(s.hidden){ s.words = []; continue; }
       if(s.keys){
         var arr = new Array(s.keys.length);
         for(var i=0;i<s.keys.length;i++) arr[i] = IDX[s.keys[i]] || ['', '', '', 0];
@@ -413,8 +415,10 @@ function buildKeySets(){
 function keyOf(slug, idx){
   var s = findWordSet(slug);
   if(s && (s.kind || 'word') === 'word'){
-    var w = s.words[idx];
+    var w = s.words && s.words[idx];
     if(w) return w._k || (w._k = wordKey(w[0]));
+    /* 合并后的老表没有 words，只有 keys：旧进度迁移靠这里还原词形 */
+    if(s.keys && s.keys[idx] !== undefined) return s.keys[idx];
   }
   return slug + '#' + idx;
 }
@@ -791,8 +795,10 @@ function renderHome(){
   grandPct = pct(doneU+doneE+doneB, uniqW+totalE+totalB);
 
   var html = '';
+  var nSets = 0;
+  WORD_DATA.forEach(function(s){ if(!s.hidden) nSets++; });
   html += '<div class="hero"><h1>每天一点点，轻松说英语</h1>'
-       + '<p>' + WORD_DATA.length + ' 个词表专题 · ' + uniqW.toLocaleString() + ' 个不同单词 · ' + POD_DATA.length + ' 套音视频节目 · APEC 手册 ' + totalB + ' 条双语</p></div>';
+       + '<p>' + nSets + ' 个词表专题 · ' + uniqW.toLocaleString() + ' 个不同单词 · ' + POD_DATA.length + ' 套音视频节目 · APEC 手册 ' + totalB + ' 条双语</p></div>';
 
   html += '<div class="overall"><span class="big">' + grandPct + '%</span>'
        + '<span class="meta">已掌握单词 ' + doneU.toLocaleString() + ' / ' + uniqW.toLocaleString()
@@ -821,6 +827,7 @@ function renderHome(){
        + '</div>';
   html += '<div class="grid2">';
   WORD_DATA.forEach(function(s){
+    if(s.hidden) return;
     var d = wordDoneCount(s.slug);
     var kind = s.kind || 'word';
     var sub;

@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0F766E">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -16,7 +16,7 @@
   --surface:#FFFFFF;
   --ink:#1C2628;
   --muted:#5E6B6C;
-  --faint:#8A9697;
+  --faint:#78857F;
   --hair:#E2E6E3;
   --accent:#0F766E;
   --accent-soft:#E0EFEC;
@@ -224,6 +224,66 @@ footer{
 .b-en{font-size:14px;line-height:1.6;color:var(--muted);margin-top:6px}
 .biling.done .b-cn, .biling.done .b-en{color:var(--faint)}
 
+/* ===== 复习队列 / 难词本 ===== */
+.subbar{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px}
+.chip-btn{
+  min-height:34px;padding:0 12px;border:1px solid var(--hair);border-radius:999px;
+  background:var(--surface);font-size:12.5px;color:var(--muted);
+  display:inline-flex;align-items:center;gap:5px;
+}
+.chip-btn:hover{border-color:var(--accent);color:var(--accent)}
+.chip-btn.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.chip-btn .num{font-weight:700}
+.chip-btn .dot{width:6px;height:6px;border-radius:50%;background:var(--accent)}
+.mini-btn.on{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.rev-controls{display:flex;gap:10px;margin-top:16px}
+.rev-controls button{flex:1;min-height:48px;border-radius:10px;font-size:15px;font-weight:600}
+.btn-forgot{background:var(--surface);border:1px solid var(--hair);color:var(--danger)}
+.btn-forgot:hover{border-color:var(--danger)}
+.btn-reveal{background:var(--surface);border:1px solid var(--accent);color:var(--accent)}
+.btn-remember{background:var(--accent);color:#fff}
+.rev-meta{text-align:center;font-size:12px;color:var(--faint);margin-top:10px}
+.hard-row{
+  display:flex;align-items:center;gap:10px;background:var(--surface);
+  border:1px solid var(--hair);border-radius:var(--radius);padding:10px 12px;margin-bottom:8px;
+}
+.hard-row .hw{flex:1;min-width:0}
+.hard-row .hw b{font-family:Georgia,serif;font-size:16px;font-weight:600;word-break:break-word}
+.hard-row .hw span{display:block;font-size:12.5px;color:var(--muted);margin-top:3px}
+.hard-row .src{font-size:11px;color:var(--faint);background:var(--bg);border-radius:4px;padding:1px 6px;white-space:nowrap}
+.hard-row .kill{border:none;background:none;color:var(--faint);font-size:16px;padding:6px;cursor:pointer}
+.hard-row .kill:hover{color:var(--danger)}
+
+/* ===== 通用文本弹窗（替代 prompt） ===== */
+.tm-mask{position:fixed;inset:0;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;z-index:120;padding:16px}
+.tm-panel{
+  background:var(--surface);border-radius:14px;padding:16px;width:100%;max-width:560px;
+  box-sizing:border-box;box-shadow:0 10px 40px rgba(0,0,0,.18);max-height:86vh;
+  display:flex;flex-direction:column;gap:8px;
+}
+.tm-title{font-size:15px;font-weight:700}
+.tm-hint{font-size:12px;color:var(--muted);line-height:1.6}
+.tm-area{
+  width:100%;box-sizing:border-box;min-height:150px;max-height:46vh;border:1px solid var(--hair);
+  border-radius:10px;padding:10px;font-size:16px;line-height:1.5;font-family:inherit;
+  resize:vertical;outline:none;background:var(--surface);color:var(--ink);
+}
+.tm-area:focus{border-color:var(--accent)}
+.tm-actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.tm-ok{background:var(--accent);color:#fff;border:none;border-radius:9px;padding:9px 16px;font-weight:600;font-size:14px}
+.tm-cancel{background:var(--surface);border:1px solid var(--hair);border-radius:9px;padding:9px 16px;font-size:14px;color:var(--ink)}
+.backup-warn{
+  background:#FBF3E4;color:#7A5B1E;border:1px solid #EAD9AE;border-radius:8px;
+  padding:9px 12px;font-size:12.5px;margin-bottom:12px;line-height:1.6;
+}
+.backup-warn button{
+  margin-left:8px;border:1px solid #D9C48C;background:#fff;color:#7A5B1E;
+  border-radius:6px;padding:2px 8px;font-size:12px;
+}
+.bk-grid{display:flex;flex-direction:column;gap:8px;margin-top:4px}
+.bk-line{font-size:12.5px;color:var(--muted)}
+.bk-line b{color:var(--ink)}
+
 /* ===== 桌面扩展 ===== */
 @media (min-width:768px){
   .wrap{padding:28px 24px 80px}
@@ -276,7 +336,7 @@ var APEC_BOOKS=[{"bookId":"b2","title":"公务人员实用英语手册","chapter
 var STORE_KEY = 'lqyy_v1';
 var memWarn = false;
 function defaultState(){
-  return {words:{}, pods:{}, podPos:{}, apec:{}};
+  return {words:{}, pods:{}, podPos:{}, apec:{}, review:{}, hard:{}};
 }
 var state = defaultState();
 function loadState(){
@@ -289,6 +349,8 @@ function loadState(){
   state.pods = state.pods || {};
   state.podPos = state.podPos || {};
   state.apec = state.apec || {};
+  state.review = state.review || {};
+  state.hard = state.hard || {};
 }
 function saveState(){
   try{ localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
@@ -301,13 +363,76 @@ function isLearned(slug, idx){
 function toggleWord(slug, idx){
   var arr = state.words[slug] || [];
   var i = arr.indexOf(idx);
-  if(i === -1){ arr.push(idx); arr.sort(function(a,b){return a-b;}); }
-  else{ arr.splice(i,1); }
+  if(i === -1){ arr.push(idx); arr.sort(function(a,b){return a-b;}); scheduleReview(slug, idx); }
+  else{ arr.splice(i,1); unscheduleReview(slug, idx); }
   state.words[slug] = arr;
   saveState();
 }
 function wordDoneCount(slug){ return (state.words[slug]||[]).length; }
-function resetWords(slug){ state.words[slug] = []; saveState(); }
+function resetWords(slug){
+  state.words[slug] = [];
+  state.review[slug] = {};
+  saveState();
+}
+
+/* ================= 复习队列（间隔重复，纯本地） =================
+   标记"已学"时立即排期，间隔 1/3/7/15/30/60 天；到期才出现在"待复习"里。
+   "记得"→ 进下一档；"忘了"→ 退回第 1 档，明天再见。 */
+var SRS_DAYS = [1, 3, 7, 15, 30, 60];
+var DAY_MS = 86400000;
+function reviewMap(slug){
+  if(!state.review[slug]) state.review[slug] = {};
+  return state.review[slug];
+}
+function scheduleReview(slug, idx){
+  reviewMap(slug)[idx] = { t: Date.now(), n: 0 };
+}
+function unscheduleReview(slug, idx){
+  var m = state.review[slug];
+  if(m) delete m[idx];
+}
+function dueList(slug){
+  var m = state.review[slug] || {}, now = Date.now(), out = [];
+  for(var k in m){
+    if(!Object.prototype.hasOwnProperty.call(m, k)) continue;
+    var r = m[k] || {}, n = Math.min(r.n || 0, SRS_DAYS.length - 1);
+    if(now >= (r.t || 0) + SRS_DAYS[n] * DAY_MS) out.push(+k);
+  }
+  out.sort(function(a, b){ return (m[a].t || 0) - (m[b].t || 0); });
+  return out;
+}
+function dueCount(slug){ return dueList(slug).length; }
+function dueTotal(){
+  var t = 0;
+  for(var i=0;i<WORD_DATA.length;i++){ t += dueCount(WORD_DATA[i].slug); }
+  return t;
+}
+function gradeReview(slug, idx, ok){
+  var m = reviewMap(slug), r = m[idx] || { t: Date.now(), n: 0 };
+  r.n = ok ? Math.min((r.n || 0) + 1, SRS_DAYS.length - 1) : 0;
+  r.t = Date.now();
+  m[idx] = r;
+  saveState();
+}
+
+/* ================= 难词本 ================= */
+function isHard(slug, idx){
+  var a = state.hard[slug];
+  return !!a && a.indexOf(idx) !== -1;
+}
+function toggleHard(slug, idx){
+  var a = state.hard[slug] || (state.hard[slug] = []);
+  var i = a.indexOf(idx);
+  if(i === -1){ a.push(idx); a.sort(function(x,y){return x-y;}); }
+  else{ a.splice(i,1); }
+  saveState();
+}
+function hardCount(slug){ return (state.hard[slug] || []).length; }
+function hardTotal(){
+  var t = 0;
+  for(var k in state.hard){ if(Object.prototype.hasOwnProperty.call(state.hard,k)) t += (state.hard[k]||[]).length; }
+  return t;
+}
 
 /* ---- APEC 手册进度 ---- */
 function apecArr(bookId, cid){ return ((state.apec[bookId]||{})[cid]) || []; }
@@ -349,7 +474,7 @@ function resetPods(src){ state.pods[src] = []; saveState(); }
 /* ================= 工具 ================= */
 function esc(s){
   if(s == null) return '';
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 function $(id){ return document.getElementById(id); }
 function toast(msg){
@@ -516,6 +641,24 @@ function renderHome(){
 
   if(memWarn){ html += '<div class="storage-warn">当前浏览器禁止了本地存储（file:// 限制），本次进度只保存在内存中，刷新后会丢失。</div>'; }
 
+  var bkDays = lastBackupDaysAgo();
+  var bkc = backupCounts();
+  var bkVolume = bkc.words + bkc.diary + bkc.coachMsgs + bkc.mem;
+  if(bkVolume >= 20 && (bkDays === null || bkDays >= 7)){
+    html += '<div class="backup-warn">'
+         + (bkDays === null ? '还没备份过，' : ('已 ' + bkDays + ' 天没备份了，'))
+         + '这些数据只存在这台设备上。'
+         + '<button id="btnBkWarn">立即备份</button></div>';
+  }
+
+  var dTotal = dueTotal(), hTotal = hardTotal();
+  if(dTotal || hTotal){
+    html += '<div class="subbar">'
+         + (dTotal ? '<a class="chip-btn on" href="#/review"><span class="dot"></span>待复习 <span class="num">' + dTotal + '</span></a>' : '')
+         + (hTotal ? '<a class="chip-btn" href="#/hard">⭐ 难词本 <span class="num">' + hTotal + '</span></a>' : '')
+         + '</div>';
+  }
+
   html += '<div class="sect-title" id="sec-words">单词专题</div><div class="grid2">';
   WORD_DATA.forEach(function(s){
     var d = wordDoneCount(s.slug);
@@ -558,15 +701,19 @@ function renderHome(){
          + '<span class="pbar"><i style="width:' + pct(db,nb) + '%"></i></span></a>';
   });
   html += '</div>';
-  html += '<div class="prog-foot"><span>进度只保存在本机浏览器 · 清除浏览器数据前请先备份</span>'
+  html += '<div class="prog-foot"><span>全部数据只保存在本机浏览器 · 清除浏览器数据前请先备份</span>'
        + '<span class="backup-row">'
-       + '<button class="mini-btn" id="btnBackup">💾 备份进度</button>'
-       + '<button class="mini-btn" id="btnRestore">📂 恢复进度</button>'
+       + '<button class="mini-btn" id="btnBackup">⬇ 备份到手机</button>'
+       + '<button class="mini-btn" id="btnRestore">⬆ 从文件恢复</button>'
+       + '<button class="mini-btn" id="btnBackupMore">📋 更多方式</button>'
        + '</span>'
-       + '<span class="backup-hint">备份：点「备份进度」复制全部进度（自动复制或弹窗长按复制），粘到备忘录保存。恢复：点「恢复进度」把之前复制的进度粘贴回来即可。</span></div>';
+       + '<span class="backup-hint">备份：点「备份到手机」存成一个 .json 文件（安卓存到「下载 / Download」，iPhone 存到「文件」App）。恢复：点「从文件恢复」选那个文件即可。</span></div>';
   $('app').innerHTML = html;
-  $('btnBackup').onclick = copyBackupText;
-  $('btnRestore').onclick = pasteRestore;
+  $('btnBackup').onclick = saveFullBackupFile;
+  $('btnRestore').onclick = pickRestoreFile;
+  $('btnBackupMore').onclick = openBackupPanel;
+  var bw = $('btnBkWarn');
+  if(bw) bw.onclick = openBackupPanel;
 }
 
 /* ================= 视图：单词学习 ================= */
@@ -591,6 +738,44 @@ function nextUnlearned(slug, from, dir){
   return from;
 }
 
+/* 卡片正文（学习页复用） */
+function cardBody(kind, w){
+  if(kind === 'word'){
+    return '<div class="word">' + esc(w[0]) + '</div>'
+         + (w[1] ? '<div class="ph">/' + esc(w[1]) + '/</div>' : '')
+         + (w[3]===1 ? '<div class="grp">核心词</div>' : '')
+         + '<div class="def">' + esc(w[2]) + '</div>';
+  }
+  if(kind === 'sentence'){
+    return '<div class="word big-sentence">' + esc(w[0]) + '</div>'
+         + (w[2] ? '<div class="grp">' + esc(w[2]) + '</div>' : '')
+         + '<div class="def">' + esc(w[1]) + '</div>';
+  }
+  return '<div class="word big-phrase">' + esc(w[0]) + '</div>'
+       + (w[4] ? '<div class="grp">' + esc(w[4]) + '</div>' : '')
+       + '<div class="def">' + esc(w[1]) + '</div>'
+       + '<div class="ex"><div class="ex-en">' + esc(w[2]) + '</div>'
+       + (w[3] ? '<div class="ex-cn">' + esc(w[3]) + '</div>' : '') + '</div>';
+}
+/* 复习卡：正面只给词/句，背面给释义 */
+function wordFace(kind, w){
+  if(kind === 'sentence') return '<div class="word big-sentence">' + esc(w[0]) + '</div>';
+  if(kind === 'phrase') return '<div class="word big-phrase">' + esc(w[0]) + '</div>';
+  if(kind === 'word' || !kind){
+    return '<div class="word">' + esc(w[0]) + '</div>' + (w[1] ? '<div class="ph">/' + esc(w[1]) + '/</div>' : '');
+  }
+  return '<div class="word big-phrase">' + esc(w[0]) + '</div>';
+}
+function wordBack(kind, w){
+  if(kind === 'sentence') return '<div class="def">' + esc(w[1]) + '</div>';
+  if(kind === 'word' || !kind){
+    return '<div class="def">' + esc(w[2]) + '</div>' + (w[3]===1 ? '<div class="grp">核心词</div>' : '');
+  }
+  return '<div class="def">' + esc(w[1]) + '</div>'
+       + '<div class="ex"><div class="ex-en">' + esc(w[2]) + '</div>'
+       + (w[3] ? '<div class="ex-cn">' + esc(w[3]) + '</div>' : '') + '</div>';
+}
+
 function renderStudy(){
   var s = findWordSet(route.slug);
   if(!s){ redirectTo('#/'); return; }
@@ -607,31 +792,24 @@ function renderStudy(){
          : '搜索短语 / 中文 / 例句…';
   html += '<div class="searchbox"><input id="q" type="search" placeholder="' + esc(ph) + '"></div>';
   html += '<div class="search-results" id="sres" style="display:none"></div>';
+  var dueN = dueCount(s.slug), hardN = hardCount(s.slug);
+  html += '<div class="subbar">'
+       + '<a class="chip-btn' + (dueN ? ' on' : '') + '" href="#/review/' + s.slug + '">🔁 待复习 <span class="num">' + dueN + '</span></a>'
+       + '<a class="chip-btn' + (hardN ? ' on' : '') + '" href="#/hard/' + s.slug + '">⭐ 难词本 <span class="num">' + hardN + '</span></a>'
+       + '</div>';
 
   var w = s.words[curIdx];
   var learned = isLearned(s.slug, curIdx);
-  var body = '';
-  if(kind === 'word'){
-    body = '<div class="word">' + esc(w[0]) + '</div>'
-         + (w[1] ? '<div class="ph">/' + esc(w[1]) + '/</div>' : '')
-         + (w[3]===1 ? '<div class="grp">核心词</div>' : '')
-         + '<div class="def">' + esc(w[2]) + '</div>';
-  }else if(kind === 'sentence'){
-    body = '<div class="word big-sentence">' + esc(w[0]) + '</div>'
-         + (w[2] ? '<div class="grp">' + esc(w[2]) + '</div>' : '')
-         + '<div class="def">' + esc(w[1]) + '</div>';
-  }else{
-    body = '<div class="word big-phrase">' + esc(w[0]) + '</div>'
-         + (w[4] ? '<div class="grp">' + esc(w[4]) + '</div>' : '')
-         + '<div class="def">' + esc(w[1]) + '</div>'
-         + '<div class="ex"><div class="ex-en">' + esc(w[2]) + '</div>'
-         + (w[3] ? '<div class="ex-cn">' + esc(w[3]) + '</div>' : '') + '</div>';
-  }
+  var body = cardBody(kind, w);
+  var hardOn = isHard(s.slug, curIdx);
   html += '<div class="flashcard">'
        + (learned ? '<span class="done-mark">已学</span>' : '')
        + '<div class="pos">' + (curIdx+1) + ' / ' + s.words.length + '</div>'
        + body
-       + '<button class="mini-btn" id="btnSound" style="margin:14px auto 0;display:block;width:max-content">🔊 朗读</button></div>';
+       + '<div style="display:flex;gap:8px;justify-content:center;margin-top:14px">'
+       + '<button class="mini-btn" id="btnSound">🔊 朗读</button>'
+       + '<button class="mini-btn' + (hardOn ? ' on' : '') + '" id="btnHard">' + (hardOn ? '⭐ 已收进难词本' : '⭐ 太难') + '</button>'
+       + '</div></div>';
 
   html += '<div class="controls">'
        + '<button class="btn-nav" id="btnPrev">上一个</button>'
@@ -643,6 +821,11 @@ function renderStudy(){
   $('btnPrev').onclick = function(){ curIdx = nextUnlearned(s.slug, curIdx, -1); renderStudy(); };
   $('btnNext').onclick = function(){ curIdx = nextUnlearned(s.slug, curIdx, 1); renderStudy(); };
   $('btnSound').onclick = function(){ stopSound(); speak(w[0]); };
+  $('btnHard').onclick = function(){
+    toggleHard(s.slug, curIdx);
+    toast(isHard(s.slug, curIdx) ? '已收进难词本' : '已从难词本移除');
+    renderStudy();
+  };
   $('btnMark').onclick = function(){
     toggleWord(s.slug, curIdx);
     toast(isLearned(s.slug,curIdx) ? '已标记' : '已撤销');
@@ -689,6 +872,113 @@ function renderStudy(){
     var el = document.querySelector('.flashcard');
     if(el){ el.scrollIntoView({block:'center'}); }
   }, 60);
+}
+
+/* ================= 视图：复习（间隔重复） ================= */
+var revQueue = null, revPos = 0, revKey = null, revShown = false;
+function startReview(slug){
+  revQueue = []; revPos = 0; revShown = false;
+  if(slug){
+    if(!findWordSet(slug)) return;
+    dueList(slug).forEach(function(i){ revQueue.push({ slug: slug, idx: i }); });
+  }else{
+    WORD_DATA.forEach(function(s){
+      dueList(s.slug).forEach(function(i){ revQueue.push({ slug: s.slug, idx: i }); });
+    });
+  }
+}
+function renderReview(){
+  var q = revQueue || [];
+  var head = '<div class="study-head">'
+           + '<a class="mini-btn" href="#/">返回</a>'
+           + '<span class="title">🔁 复习</span>'
+           + (route.slug ? '<a class="mini-btn" href="#/review">全部专题</a>' : '')
+           + '</div>';
+  if(!q.length){
+    $('app').innerHTML = head + '<div class="empty">今天没有到期的复习。<br>标记「已学」的词会按 1 / 3 / 7 / 15 / 30 / 60 天的间隔回来找你。</div>';
+    return;
+  }
+  if(revPos >= q.length){
+    $('app').innerHTML = head + '<div class="empty">这一批复习完了 ✓<br>共 ' + q.length + ' 条，明天见。<br><br>'
+      + '<a class="chip-btn" href="#/">回首页</a> <a class="chip-btn" href="#/review">再看一遍待复习</a></div>';
+    return;
+  }
+  var it = q[revPos], s = findWordSet(it.slug);
+  if(!s){ revPos++; renderReview(); return; }
+  var w = s.words[it.idx], kind = s.kind || 'word';
+  if(!w){ revPos++; renderReview(); return; }
+  var hardOn = isHard(it.slug, it.idx);
+  var html = head
+    + '<div class="subbar"><span class="chip-btn">' + esc(s.title) + '</span>'
+    + '<span class="chip-btn">' + (revPos+1) + ' / ' + q.length + '</span></div>'
+    + '<div class="flashcard">'
+    + '<div class="pos">先回想，再看释义</div>'
+    + wordFace(kind, w)
+    + '<div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--hair);min-height:52px">'
+    + (revShown ? wordBack(kind, w) : '<div style="text-align:center;color:var(--faint);font-size:13px;padding-top:10px">这个词/句是什么意思？</div>')
+    + '</div>'
+    + '<div style="display:flex;gap:8px;justify-content:center;margin-top:14px">'
+    + '<button class="mini-btn" id="rvSound">🔊 朗读</button>'
+    + '<button class="mini-btn' + (hardOn ? ' on' : '') + '" id="rvHard">⭐</button>'
+    + '</div></div>';
+  html += revShown
+    ? '<div class="rev-controls"><button class="btn-forgot" id="rvForgot">忘了</button><button class="btn-remember" id="rvRemember">记得</button></div>'
+    : '<div class="rev-controls"><button class="btn-reveal" id="rvShow">显示释义</button></div>';
+  html += '<div class="rev-meta">记得 → 下次间隔加倍 · 忘了 → 明天再来 · 方向键也能操作</div>';
+  $('app').innerHTML = html;
+
+  $('rvSound').onclick = function(){ stopSound(); speak(w[0]); };
+  $('rvHard').onclick = function(){ toggleHard(it.slug, it.idx); renderReview(); };
+  if($('rvShow')) $('rvShow').onclick = function(){ revShown = true; renderReview(); };
+  if($('rvRemember')) $('rvRemember').onclick = function(){ gradeReview(it.slug, it.idx, true); revPos++; revShown = false; renderReview(); };
+  if($('rvForgot')) $('rvForgot').onclick = function(){ gradeReview(it.slug, it.idx, false); revPos++; revShown = false; renderReview(); };
+}
+
+/* ================= 视图：难词本 ================= */
+var pendingWord = null;
+function renderHard(slug){
+  var sets = slug ? [findWordSet(slug)] : WORD_DATA;
+  var total = 0, body = '';
+  sets.forEach(function(s){
+    if(!s) return;
+    var a = state.hard[s.slug] || [];
+    if(!a.length) return;
+    total += a.length;
+    body += '<div class="sect-title">' + esc(s.title) + ' · ' + a.length + ' 条</div>';
+    a.forEach(function(i){
+      var w = s.words[i];
+      if(!w) return;
+      var kind = s.kind || 'word';
+      var def = kind === 'word' ? (w[2] || '') : (w[1] || '');
+      body += '<div class="hard-row" data-slug="' + esc(s.slug) + '" data-idx="' + i + '">'
+            + '<div class="hw"><b>' + esc(w[0]) + '</b><span>' + esc(def) + '</span></div>'
+            + '<span class="src">' + (kind==='word'?'词':'句/短语') + '</span>'
+            + '<button class="kill" data-kill="1" aria-label="移出难词本">✕</button></div>';
+    });
+  });
+  var html = '<div class="study-head">'
+           + '<a class="mini-btn" href="#/">返回</a>'
+           + '<span class="title">⭐ 难词本</span>'
+           + (slug ? '<a class="mini-btn" href="#/hard">全部专题</a>' : '')
+           + '</div>';
+  html += total ? body : '<div class="empty">难词本还是空的。<br>学习时点「⭐ 太难」就会收进来，之后可在这里集中攻克。</div>';
+  $('app').innerHTML = html;
+
+  document.querySelectorAll('#app .hard-row').forEach(function(row){
+    row.onclick = function(ev){
+      var kill = ev.target.closest ? ev.target.closest('[data-kill]') : null;
+      var sl = row.getAttribute('data-slug'), ix = +row.getAttribute('data-idx');
+      if(kill){
+        ev.stopPropagation();
+        toggleHard(sl, ix);
+        renderHard(route.slug || null);
+        toast('已移出难词本');
+        return;
+      }
+      pendingWord = { slug: sl, idx: ix };
+      nav('#/words/' + sl);
+    };
+  });
 }
 
 /* ================= 视图：播客来源列表 ================= */
@@ -748,15 +1038,23 @@ function renderPodList(){
       if(el){ el.scrollIntoView({block:'center'}); }
     }, 60);
   }
-  // 记录滚动位置
+  // 记录滚动位置（节流：滚停 400ms 只写一次，避免边滚边写 localStorage）
+  var podScrollT = null;
   window.onscroll = function(){
-    if(route.view !== 'podlist') return;
-    var rowsNow = document.querySelectorAll('.ep');
-    for(var i=0;i<rowsNow.length;i++){
-      var r = rowsNow[i];
-      var rect = r.getBoundingClientRect();
-      if(rect.bottom > 80){ state.podPos[p.source] = +r.getAttribute('data-i'); saveState(); break; }
-    }
+    if(route.view !== 'podlist' || podScrollT) return;
+    podScrollT = setTimeout(function(){
+      podScrollT = null;
+      if(route.view !== 'podlist') return;
+      var rowsNow = document.querySelectorAll('.ep');
+      for(var i=0;i<rowsNow.length;i++){
+        var r = rowsNow[i];
+        if(r.getBoundingClientRect().bottom > 80){
+          var v = +r.getAttribute('data-i');
+          if(state.podPos[p.source] !== v){ state.podPos[p.source] = v; saveState(); }
+          break;
+        }
+      }
+    }, 400);
   };
 }
 
@@ -878,11 +1176,19 @@ function render(){
   stopSound(); // 切换视图时停止正在播放的声音
   window.onscroll = null;
   var homeTarget = null;
+  if(route.view !== 'review') revKey = null;
   if(route.view === 'words' && route.slug){
     var ws = findWordSet(route.slug);
     var svw = ws ? ssGetPos('w', route.slug) : null;
     curIdx = (typeof svw === 'number' && svw >= 0 && svw < ws.words.length) ? svw : firstUnlearned(route.slug);
+    if(pendingWord && pendingWord.slug === route.slug){ curIdx = pendingWord.idx; pendingWord = null; }
     renderStudy();
+  }else if(route.view === 'review'){
+    var rk = 'rev:' + (route.slug || '');
+    if(revKey !== rk){ revKey = rk; startReview(route.slug || null); }
+    renderReview();
+  }else if(route.view === 'hard'){
+    renderHard(route.slug || null);
   }else if(route.view === 'pods' && route.src){
     renderPodList();
   }else if(route.view === 'books' && route.slug && route.chap){
@@ -920,6 +1226,15 @@ function render(){
 document.addEventListener('keydown', function(ev){
   var tag = (ev.target && ev.target.tagName) || '';
   if(tag === 'INPUT' || tag === 'TEXTAREA') return;
+  if(route.view === 'review'){
+    if(!revShown){
+      if(ev.key === ' ' || ev.key === 'Enter' || ev.key === 'ArrowRight'){ ev.preventDefault(); if($('rvShow')) $('rvShow').click(); }
+    }else{
+      if(ev.key === 'ArrowLeft' || ev.key === '1'){ ev.preventDefault(); if($('rvForgot')) $('rvForgot').click(); }
+      else if(ev.key === 'ArrowRight' || ev.key === '2' || ev.key === ' ' || ev.key === 'Enter'){ ev.preventDefault(); if($('rvRemember')) $('rvRemember').click(); }
+    }
+    return;
+  }
   if(route.view === 'words' && route.slug){
     if(ev.key === 'ArrowLeft'){ $('btnPrev').click(); }
     else if(ev.key === 'ArrowRight'){ $('btnNext').click(); }
@@ -973,141 +1288,286 @@ function ssRestoreView(){
   }
 }
 
-/* ============ 进度备份 / 恢复（localStorage 导出/导入） ============ */
-function buildBackup(){
-  var o = {app:'qingxue-english', type:'progress-backup', version:1, exportedAt:new Date().toISOString()};
-  try{
-    var raw = localStorage.getItem(STORE_KEY);
-    if(raw){ o.state = JSON.parse(raw); }
-  }catch(e){}
-  if(!o.state || typeof o.state !== 'object'){ o.state = {}; }
-  try{
-    var raw2 = localStorage.getItem(SS_KEY);
-    if(raw2){ o.ss = JSON.parse(raw2); }
-  }catch(e){}
-  return o;
+/* ============ 备份 / 恢复（整站一份文件，直接存手机本地） ============ */
+var LAST_BACKUP_KEY = 'qingxue_last_backup';
+var PRE_RESTORE_KEY = 'qingxue_pre_restore';
+var STORE_PREFIX = /^(lqyy_|qingxue|coach_)/;
+
+function nowStamp(){
+  var d = new Date(), p = function(n){ return n < 10 ? '0' + n : '' + n; };
+  return d.getFullYear() + p(d.getMonth()+1) + p(d.getDate()) + '-' + p(d.getHours()) + p(d.getMinutes());
 }
-function backupToFile(){
-  var o = buildBackup();
-  var text = JSON.stringify(o, null, 2);
-  var d = new Date();
-  var pad = function(n){ return n < 10 ? '0' + n : '' + n; };
-  var fname = 'qingxue-progress-' + d.getFullYear() + pad(d.getMonth()+1) + pad(d.getDate()) + '.json';
-  // 优先 File System Access API：弹出系统保存对话框，可直接存到手机本机/下载目录（不弹第三方 app 分享面板）
-  if(window.showSaveFilePicker){
-    window.showSaveFilePicker({
-      suggestedName: fname,
-      types: [{ description: 'JSON 备份', accept: { 'application/json': ['.json'] } }]
-    }).then(function(handle){
-      return handle.createWritable().then(function(w){
-        return w.write(text).then(function(){ return w.close(); });
-      });
-    }).then(function(){
-      toast('进度已保存到本机（' + fname + '）');
-    }).catch(function(err){
-      // 用户取消（AbortError）/权限拒绝：静默，不打扰
-      if(err && (err.name === 'AbortError' || err.name === 'SecurityError')) return;
-      downloadBackup(text, fname);
-      toast('系统保存不可用，已改用下载方式');
+function collectStore(){
+  var out = {};
+  try{
+    for(var i=0;i<localStorage.length;i++){
+      var k = localStorage.key(i);
+      if(!k || k === LAST_BACKUP_KEY || k === PRE_RESTORE_KEY) continue;
+      if(STORE_PREFIX.test(k)) out[k] = localStorage.getItem(k);
+    }
+  }catch(e){}
+  return out;
+}
+function backupCounts(){
+  var c = { words:0, hard:0, diary:0, coachMsgs:0, mem:0 };
+  try{
+    for(var k in state.words){ if(Object.prototype.hasOwnProperty.call(state.words,k)) c.words += (state.words[k]||[]).length; }
+    for(var h in state.hard){ if(Object.prototype.hasOwnProperty.call(state.hard,h)) c.hard += (state.hard[h]||[]).length; }
+  }catch(e){}
+  try{
+    var w = JSON.parse(localStorage.getItem('qingxue_write_v1') || '[]');
+    c.diary = Array.isArray(w) ? w.length : 0;
+  }catch(e){}
+  try{
+    ['nicole','mike','stan','otis','traveler','ahmet'].forEach(function(r){
+      var hh = JSON.parse(localStorage.getItem('qingxue-coach-hist-' + r) || 'null');
+      var arr = hh && hh.history ? hh.history : (Array.isArray(hh) ? hh : []);
+      c.coachMsgs += arr.length;
+      var mm = JSON.parse(localStorage.getItem('qingxue-coach-mem-' + r) || '[]');
+      c.mem += Array.isArray(mm) ? mm.length : 0;
     });
-  } else {
-    downloadBackup(text, fname);
-  }
+  }catch(e){}
+  return c;
 }
-function downloadBackup(text, fname){
-  var blob = new Blob([text], {type:'application/json'});
+function hasAnyData(){
+  var c = backupCounts();
+  return (c.words + c.diary + c.coachMsgs + c.mem) > 0;
+}
+function buildFullBackup(){
+  return {
+    app: 'qingxue-english',
+    type: 'full-backup',
+    version: 2,
+    exportedAt: new Date().toISOString(),
+    counts: backupCounts(),
+    data: collectStore()
+  };
+}
+function lastBackupDaysAgo(){
+  try{
+    var t = +(localStorage.getItem(LAST_BACKUP_KEY) || 0);
+    if(!t) return null;
+    return Math.floor((Date.now() - t) / 86400000);
+  }catch(e){ return null; }
+}
+function markBackedUp(){
+  try{ localStorage.setItem(LAST_BACKUP_KEY, String(Date.now())); }catch(e){}
+}
+function downloadText(text, fname){
+  var blob = new Blob([text], {type:'application/json;charset=utf-8'});
   var url = URL.createObjectURL(blob);
   var a = document.createElement('a');
-  a.href = url;
-  a.download = fname;
+  a.href = url; a.download = fname; a.style.display = 'none';
   document.body.appendChild(a);
   a.click();
-  setTimeout(function(){ URL.revokeObjectURL(url); if(a.parentNode){ a.parentNode.removeChild(a); } }, 800);
-  toast('进度已备份为 ' + fname);
+  setTimeout(function(){ URL.revokeObjectURL(url); if(a.parentNode) a.parentNode.removeChild(a); }, 1500);
 }
+function saveFullBackupFile(){
+  var text = JSON.stringify(buildFullBackup(), null, 2);
+  var fname = '轻学英语备份-' + nowStamp() + '.json';
+  markBackedUp();
+  if(window.showSaveFilePicker){
+    window.showSaveFilePicker({ suggestedName: fname, types: [{ description: '备份文件', accept: { 'application/json': ['.json'] } }] })
+      .then(function(handle){
+        return handle.createWritable().then(function(w){
+          return w.write(text).then(function(){ return w.close(); });
+        });
+      })
+      .then(function(){ toast('已保存：' + fname); })
+      .catch(function(err){
+        // 用户主动取消才静默，其他失败一律退回浏览器下载
+        if(err && err.name === 'AbortError') return;
+        downloadText(text, fname);
+        toast('已下载：' + fname);
+      });
+    return;
+  }
+  downloadText(text, fname);
+  toast('已保存到手机：' + fname);
+}
+function copyFullBackup(){
+  markBackedUp();
+  copyTextForBackup(JSON.stringify(buildFullBackup(), null, 2), '备份内容已生成', null);
+}
+function afterRestoreOk(msg){
+  toast(msg || '恢复成功，正在刷新…');
+  setTimeout(function(){ location.reload(); }, 600);
+}
+function snapshotBeforeRestore(){
+  try{ localStorage.setItem(PRE_RESTORE_KEY, JSON.stringify(collectStore())); }catch(e){}
+}
+function applyFullBackup(o){
+  if(!o || typeof o !== 'object' || Array.isArray(o)) return '文件内容不是有效的备份';
+  if(o.app !== 'qingxue-english') return '不是「轻学英语」的备份文件';
+
+  /* 兼容旧格式：只有学习进度 */
+  if(o.type === 'progress-backup'){
+    if(!o.state || typeof o.state !== 'object') return '进度字段缺失';
+    snapshotBeforeRestore();
+    try{ localStorage.setItem(STORE_KEY, JSON.stringify(o.state)); }
+    catch(e){ return '写入失败：本地存储不可用'; }
+    if(o.ss){ try{ localStorage.setItem(SS_KEY, JSON.stringify(o.ss)); }catch(e){} }
+    return null;
+  }
+  /* 兼容旧格式：只有日记 */
+  if(o.type === 'write-diary'){
+    if(!Array.isArray(o.entries)) return '日记备份格式不对';
+    snapshotBeforeRestore();
+    try{ localStorage.setItem('qingxue_write_v1', JSON.stringify(o.entries)); }
+    catch(e){ return '写入失败：本地存储不可用'; }
+    return null;
+  }
+  if(o.type !== 'full-backup' || !o.data || typeof o.data !== 'object') return '备份格式不对（缺少 data）';
+  var keys = Object.keys(o.data), n = 0;
+  snapshotBeforeRestore();
+  try{
+    keys.forEach(function(k){
+      if(!STORE_PREFIX.test(k)) return;
+      var v = o.data[k];
+      if(typeof v !== 'string') return;
+      localStorage.setItem(k, v); n++;
+    });
+  }catch(e){ return '写入失败：本地存储不可用（可能空间不足）'; }
+  if(!n) return '备份里没有可恢复的数据';
+  return null;
+}
+function restoreFromText(text){
+  var o = null;
+  try{ o = JSON.parse(text); }catch(e){ toast('恢复失败：不是有效的备份文本'); return; }
+  var err = applyFullBackup(o);
+  if(err){ toast('恢复失败：' + err); return; }
+  afterRestoreOk();
+}
+function pickRestoreFile(){
+  var inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = '.json,application/json';
+  inp.style.display = 'none';
+  document.body.appendChild(inp);
+  inp.onchange = function(){
+    var f = inp.files && inp.files[0];
+    if(!f){ if(inp.parentNode) inp.parentNode.removeChild(inp); return; }
+    var c = backupCounts();
+    if(!confirm('用「' + f.name + '」覆盖当前数据？\n\n当前：单词 ' + c.words + ' 条 · 日记 ' + c.diary + ' 篇 · 语伴对话 ' + c.coachMsgs + ' 条\n\n恢复前会自动存一份当前数据的快照，可在「更多方式 → 回滚」里找回。')) {
+      if(inp.parentNode) inp.parentNode.removeChild(inp);
+      return;
+    }
+    var rd = new FileReader();
+    rd.onload = function(){ restoreFromText(String(rd.result || '')); };
+    rd.onerror = function(){ toast('读取文件失败'); };
+    rd.readAsText(f);
+    setTimeout(function(){ if(inp.parentNode) inp.parentNode.removeChild(inp); }, 0);
+  };
+  inp.click();
+}
+function rollbackPreRestore(){
+  var raw = null;
+  try{ raw = localStorage.getItem(PRE_RESTORE_KEY); }catch(e){}
+  if(!raw){ toast('没有可回滚的快照'); return; }
+  var o = null;
+  try{ o = JSON.parse(raw); }catch(e){ toast('快照已损坏'); return; }
+  if(!o || typeof o !== 'object'){ toast('快照已损坏'); return; }
+  snapshotBeforeRestore();
+  try{
+    Object.keys(o).forEach(function(k){ if(typeof o[k] === 'string') localStorage.setItem(k, o[k]); });
+  }catch(e){ toast('回滚失败：本地存储不可用'); return; }
+  afterRestoreOk('已回滚到恢复前的数据，正在刷新…');
+}
+
+/* ---- 通用文本弹窗（替代 prompt，手机上可看全、可编辑） ---- */
+function askTextModal(opt){
+  opt = opt || {};
+  var old = document.getElementById('tmModal');
+  if(old) old.remove();
+  var mask = document.createElement('div');
+  mask.className = 'tm-mask';
+  mask.id = 'tmModal';
+  mask.innerHTML = '<div class="tm-panel">'
+    + '<div class="tm-title">' + esc(opt.title || '') + '</div>'
+    + (opt.hint ? '<div class="tm-hint">' + esc(opt.hint) + '</div>' : '')
+    + '<textarea class="tm-area" id="tmArea" placeholder="' + esc(opt.placeholder || '') + '">' + esc(opt.value || '') + '</textarea>'
+    + '<div class="tm-actions">'
+    + '<button class="tm-cancel" id="tmCancel">取消</button>'
+    + '<button class="tm-ok" id="tmOk">' + esc(opt.okText || '确定') + '</button>'
+    + '</div></div>';
+  document.body.appendChild(mask);
+  var ta = mask.querySelector('#tmArea');
+  function close(){ mask.remove(); }
+  mask.querySelector('#tmCancel').onclick = close;
+  mask.querySelector('#tmOk').onclick = function(){
+    var v = ta.value; close();
+    if(opt.onOk) opt.onOk(v);
+  };
+  mask.addEventListener('click', function(e){ if(e.target === mask) close(); });
+  setTimeout(function(){ if(ta) ta.focus(); }, 30);
+  return close;
+}
+function openBackupPanel(){
+  var c = backupCounts(), days = lastBackupDaysAgo();
+  var old = document.getElementById('tmModal');
+  if(old) old.remove();
+  var mask = document.createElement('div');
+  mask.className = 'tm-mask';
+  mask.id = 'tmModal';
+  mask.innerHTML = '<div class="tm-panel">'
+    + '<div class="tm-title">💾 备份与恢复</div>'
+    + '<div class="bk-grid">'
+    + '<div class="bk-line">当前：单词 <b>' + c.words + '</b> 条 · 日记 <b>' + c.diary + '</b> 篇 · 语伴对话 <b>' + c.coachMsgs + '</b> 条 · 记忆 <b>' + c.mem + '</b> 条' + (c.hard ? ' · 难词 <b>' + c.hard + '</b>' : '') + '</div>'
+    + '<div class="bk-line">上次备份：<b>' + (days === null ? '从未备份' : (days === 0 ? '今天' : days + ' 天前')) + '</b></div>'
+    + '<div class="tm-hint">备份存成一个 .json 文件到手机本地：安卓进「下载 / Download」；iPhone 在弹出的「存储到文件」里选「我的 iPhone」任意目录。恢复时从同一个地方选这个文件，不需要任何第三方 App。</div>'
+    + '</div>'
+    + '<div class="tm-actions" style="justify-content:flex-start">'
+    + '<button class="tm-ok" id="bkSave">⬇ 备份到手机</button>'
+    + '<button class="tm-cancel" id="bkCopy">📋 复制文本</button>'
+    + '<button class="tm-cancel" id="bkFile">⬆ 从文件恢复</button>'
+    + '<button class="tm-cancel" id="bkPaste">📥 粘贴恢复</button>'
+    + '<button class="tm-cancel" id="bkRollback">↩ 回滚上次恢复</button>'
+    + '<button class="tm-cancel" id="bkClose" style="margin-left:auto">关闭</button>'
+    + '</div></div>';
+  document.body.appendChild(mask);
+  function close(){ mask.remove(); }
+  mask.querySelector('#bkClose').onclick = close;
+  mask.addEventListener('click', function(e){ if(e.target === mask) close(); });
+  mask.querySelector('#bkSave').onclick = function(){ close(); saveFullBackupFile(); };
+  mask.querySelector('#bkCopy').onclick = function(){ close(); copyFullBackup(); };
+  mask.querySelector('#bkFile').onclick = function(){ close(); pickRestoreFile(); };
+  mask.querySelector('#bkPaste').onclick = function(){
+    close();
+    askTextModal({
+      title: '粘贴备份内容',
+      hint: '把之前「复制文本」得到的那段 JSON 粘进来，点确定恢复。恢复前会自动存一份当前数据的快照。',
+      placeholder: '{"app":"qingxue-english",...}',
+      onOk: function(v){ if(v && v.trim()) restoreFromText(v); }
+    });
+  };
+  mask.querySelector('#bkRollback').onclick = function(){
+    if(confirm('用「恢复前」的快照覆盖当前数据？')){
+      close(); rollbackPreRestore();
+    }
+  };
+}
+
+/* ---- 剪贴板兜底（自动复制失败时弹窗让人长按复制） ---- */
 function copyTextForBackup(text, okMsg, btn){
   function flashOk(){
-    if(btn && btn.textContent !== undefined){ var o = btn.textContent; btn.textContent = '✓ 已复制'; setTimeout(function(){ btn.textContent = o; }, 1800); }
+    if(btn && btn.textContent !== undefined){
+      var o = btn.textContent;
+      btn.textContent = '✓ 已复制';
+      setTimeout(function(){ btn.textContent = o; }, 1800);
+    }
     toast(okMsg + '，已复制到剪贴板');
   }
   function manual(){
-    var shown = prompt(okMsg + '\n（若下方内容未自动复制，请长按全选后复制到备忘录）\n\n' + text, text);
-    toast(okMsg);
+    askTextModal({
+      title: '手动复制',
+      hint: okMsg + '：长按下面的内容全选复制，粘贴到备忘录或任意笔记里保存。',
+      value: text,
+      okText: '知道了'
+    });
   }
   if(navigator.clipboard && navigator.clipboard.writeText){
     navigator.clipboard.writeText(text).then(flashOk).catch(manual);
   } else { manual(); }
-}
-function copyBackupText(){
-  copyTextForBackup(JSON.stringify(buildBackup(), null, 2), '进度备份已生成', document.getElementById('btnBackup'));
-}
-function applyBackup(o){
-  if(!o || typeof o !== 'object' || Array.isArray(o)) return '文件内容不是有效的进度对象';
-  if(o.app !== 'qingxue-english' || o.type !== 'progress-backup') return '不是「轻学英语」的进度备份文件';
-  if(typeof o.state !== 'object' || o.state === null || Array.isArray(o.state)) return '备份缺少学习进度（state 字段缺失或格式错误）';
-  var FIELDS = ['words','pods','podPos','apec'];
-  for(var i=0;i<FIELDS.length;i++){
-    var f = FIELDS[i];
-    var v = o.state[f];
-    if(v !== undefined && (v === null || typeof v !== 'object' || Array.isArray(v))) return '进度字段 state.' + f + ' 格式异常（应为对象）';
-    if(v && typeof v === 'object' && !Array.isArray(v)){
-      if(f === 'apec'){
-        // apec 结构：{bookId: {cid: [已学序号]}}，两级容器
-        for(var bk in v){
-          if(!Object.prototype.hasOwnProperty.call(v, bk)) continue;
-          var m = v[bk];
-          if(m === null || typeof m !== 'object' || Array.isArray(m)) return '进度字段 state.apec.' + bk + ' 格式异常（应为对象）';
-          for(var cid in m){
-            if(!Object.prototype.hasOwnProperty.call(m, cid)) continue;
-            if(!Array.isArray(m[cid])) return '进度字段 state.apec.' + bk + '.' + cid + ' 格式异常（应为数组）';
-          }
-        }
-      }else if(f === 'podPos'){
-        for(var k in v){
-          if(!Object.prototype.hasOwnProperty.call(v, k)) continue;
-          if(typeof v[k] !== 'number' || isNaN(v[k])) return '进度字段 state.podPos.' + k + ' 格式异常（应为数字）';
-        }
-      }else{
-        for(var k2 in v){
-          if(!Object.prototype.hasOwnProperty.call(v, k2)) continue;
-          if(!Array.isArray(v[k2])) return '进度字段 state.' + f + '.' + k2 + ' 格式异常（应为数组）';
-        }
-      }
-    }
-  }
-  if(o.ss !== undefined && (o.ss === null || typeof o.ss !== 'object' || Array.isArray(o.ss))) return '会话字段 ss 格式异常';
-  try{ localStorage.setItem(STORE_KEY, JSON.stringify(o.state)); }
-  catch(e){ return '写入进度失败：浏览器本地存储不可用'; }
-  if(o.ss !== undefined){
-    try{ localStorage.setItem(SS_KEY, JSON.stringify(o.ss)); }
-    catch(e){ return '写入会话数据失败：浏览器本地存储不可用'; }
-  }
-  return null;
-}
-function restoreFromFile(file){
-  var reader = new FileReader();
-  reader.onload = function(){
-    var text = reader.result;
-    var o = null;
-    try{ o = JSON.parse(text); }
-    catch(e){ toast('恢复失败：文件不是有效的 JSON'); return; }
-    var err = applyBackup(o);
-    if(err){ toast('恢复失败：' + err); return; }
-    toast('恢复成功，即将刷新…');
-    setTimeout(function(){ location.reload(); }, 500);
-  };
-  reader.onerror = function(){ toast('恢复失败：无法读取文件'); };
-  reader.readAsText(file);
-}
-function pasteRestore(){
-  var text = prompt('把「📋 复制备份」得到的 JSON 粘贴到这里，点确定恢复进度：');
-  if(!text || !text.trim()) return;
-  var o = null;
-  try{ o = JSON.parse(text); }catch(e){ toast('恢复失败：不是有效的备份文本'); return; }
-  var err = applyBackup(o);
-  if(err){ toast('恢复失败：' + err); return; }
-  toast('恢复成功，即将刷新…');
-  setTimeout(function(){ location.reload(); }, 500);
 }
 
 loadState();
@@ -1228,7 +1688,14 @@ ssRestoreView();
   }
 
   function pasteImport(){
-    var text = prompt('把导出的 JSON 或 MD 内容粘贴到这里，点确定导入：');
+    askTextModal({
+      title: '粘贴日记备份',
+      hint: '把导出的 JSON 或 Markdown 内容粘进来，只新增、不覆盖已有日记。',
+      placeholder: '{"app":"qingxue-english","type":"write-diary",...}',
+      onOk: function(v){ if(v && v.trim()) doPasteImport(v); }
+    });
+  }
+  function doPasteImport(text){
     if(!text || !text.trim()) return;
     var list = load(), have = {}; list.forEach(function(e){ have[e.id]=1; });
     var added = 0;
@@ -1266,6 +1733,17 @@ ssRestoreView();
     var n=app.querySelector('#writeNew'); if(n) n.onclick=function(){ openModal(null,''); };
     var ck=app.querySelector('#writeCopy'); if(ck) ck.onclick=copyWriteText;
     var pj=app.querySelector('#writePaste'); if(pj) pj.onclick=pasteImport;
+    var sf=app.querySelector('#writeSaveFile'); if(sf) sf.onclick=exportJSON;
+    var of=app.querySelector('#writeOpenFile');
+    var fi=app.querySelector('#writeFile');
+    if(of && fi){
+      of.onclick=function(){ fi.click(); };
+      fi.onchange=function(){
+        var f=fi.files && fi.files[0];
+        if(f) importFile(f);
+        fi.value='';
+      };
+    }
     var listEl=app.querySelector('#writeList');
     if(listEl) listEl.addEventListener('click', function(ev){
       var b=ev.target.closest ? ev.target.closest('button[data-act]') : null; if(!b) return;
@@ -1292,8 +1770,11 @@ ssRestoreView();
       +   '<div class="write-toolbar">'
       +     '<input id="writeSearch" placeholder="搜索标题 / 正文关键词">'
       +     '<button class="wbtn wbtn-primary" id="writeNew">＋ 写一篇</button>'
-      +     '<button class="wbtn" id="writeCopy">📋 复制备份</button>'
-      +     '<button class="wbtn" id="writePaste">📋 粘贴恢复</button>'
+      +     '<button class="wbtn" id="writeSaveFile">⬇ 存文件</button>'
+      +     '<button class="wbtn" id="writeOpenFile">⬆ 读文件</button>'
+      +     '<button class="wbtn" id="writeCopy">📋 复制</button>'
+      +     '<button class="wbtn" id="writePaste">📥 粘贴导入</button>'
+      +     '<input type="file" id="writeFile" accept=".json,.md,application/json,text/plain" style="display:none">'
       +   '</div>'
       + '</div>'
       + '<div id="writeList">' + (list.length ? list.map(cardHtml).join('') : '<div class="write-empty">还没有日记。点「＋ 写一篇」，用英文写点今天的想法。</div>') + '</div>'
@@ -1302,16 +1783,6 @@ ssRestoreView();
     bindWrite(app);
   };
 })();
-/* 写模块结束 */
-/* 写模块结束 */
-/* 写模块结束 */
-/* 写模块结束 */
-/* 写模块结束 */
-/* 写模块结束 */
-/* 写模块结束 */
-/* 写模块结束 */
-/* 写模块结束 */
-/* 写模块结束 */
 /* ============ AI 语伴（#/coach） ============ */
 (function(){
   /* ↓ 部署 worker.js 后，把这里改成你的 Cloudflare Worker 地址（例如 https://coach.你的名字.workers.dev） */
@@ -1408,7 +1879,8 @@ ssRestoreView();
 
   var state = { role:'nicole', topics:['通用日常'], auto:true, history:[], tipSeen:{}, rel:{}, sessionScene:'' };
   var rec = null, finalText = '', silenceTimer = null, micOn = false, aiBusy = false, lastAIText = '', ttsOn = true;
-  var handsFree = false, abortCtrl = null, currentAudio = null, travelerId = null;
+  var handsFree = (function(){ try{ return localStorage.getItem('qingxue_handsfree') !== '0'; }catch(e){ return true; } })();
+  var abortCtrl = null, currentAudio = null, travelerId = null;
   var requestId = 0;  // 跟踪请求：切换角色时旧请求回调直接丢弃
 
   /* 可选英文音色（Cloudflare AI Deepgram Aura-2 免费语音） */
@@ -1592,8 +2064,23 @@ ssRestoreView();
       document.head.appendChild(s);
     });
   }
-  function needEP(t){ return !!sceneOf(t); }
-  function needFA(t){ return t === '走遍美国'; }
+  /* ---- 话题语料 corpus_topic.js：不在首屏加载，进语伴后后台拉、发消息时兜底等待 ---- */
+  var _corpusPromise = null;
+  function loadCorpus(){
+    if(window.CORPUS) return Promise.resolve(true);
+    if(_corpusPromise) return _corpusPromise;
+    _corpusPromise = loadScript('./corpus_topic.js').then(function(){ return !!window.CORPUS; })
+      .catch(function(e){ _corpusPromise = null; console.warn('corpus load failed:', e && e.message); return false; });
+    return _corpusPromise;
+  }
+  function ensureCorpus(ms){
+    if(window.CORPUS) return Promise.resolve(true);
+    return new Promise(function(res){
+      var t = setTimeout(function(){ res(false); }, ms || 1600);
+      loadCorpus().then(function(){ clearTimeout(t); res(!!window.CORPUS); });
+    });
+  }
+  function needEP(t){ return !!sceneOf(t); }  function needFA(t){ return t === '走遍美国'; }
   /* ---- 新真实对白源注册：chip → 文件 + 全局名 + 注入标签（选中才懒加载） ---- */
   var DIALOGUE_REG = {
     '商务财报电话会': { file: './earnings_dialogues.js',  gvar: 'EARNINGS_DIALOGUES', label: 'Earnings Call' },
@@ -1917,78 +2404,106 @@ ssRestoreView();
     return body;
   }
 
-  /* ---- 语音输出：优先 Cloudflare Deepgram 免费语音，失败降级浏览器语音 ---- */
+  /* ---- 语音输出：Cloudflare Deepgram 真人音色 → 失败降级浏览器语音 ----
+     关键点：复用同一个 <audio> 元素。iOS 上只要它被用户手势播放过一次，
+     后续由代码调用 play() 就不再被拦，AI 回复可以直接出声，不用每次手点。 */
+  var ttsAudio = null, ttsCache = {}, ttsOrder = [], speakSerial = 0;
+  function ttsEl(){
+    if(!ttsAudio){ ttsAudio = new Audio(); ttsAudio.preload = 'auto'; }
+    return ttsAudio;
+  }
+  function cachePut(key, url){
+    if(ttsCache[key]) return;
+    ttsCache[key] = url; ttsOrder.push(key);
+    while(ttsOrder.length > 24){
+      var k = ttsOrder.shift();
+      try{ URL.revokeObjectURL(ttsCache[k]); }catch(e){}
+      delete ttsCache[k];
+    }
+  }
   function stopCurrentTTS(){
+    speakSerial++;
     try{ window.speechSynthesis.cancel(); }catch(e){}
     if(currentAudio){ try{ currentAudio.pause(); }catch(e){} currentAudio = null; }
   }
-  function coachSpeak(text, onDone){
-    if(!ttsOn){ if(onDone) onDone(); return; }
+  function speakBrowser(text, onDone){
     var finished = false;
     function done(){ if(finished) return; finished = true; if(onDone) onDone(); }
-    function speakBrowser(){
-      if(!window.speechSynthesis){ done(); return; }
-      try{ window.speechSynthesis.cancel(); }catch(e){}
-      var u = new SpeechSynthesisUtterance(text);
-      u.lang = 'en-US'; u.rate = 1; u.pitch = 1;
-      u.onend = done; u.onerror = done;
-      window.speechSynthesis.speak(u);
-    }
+    if(!window.speechSynthesis){ done(); return; }
+    try{ window.speechSynthesis.cancel(); }catch(e){}
+    var u = new SpeechSynthesisUtterance(text);
+    u.lang = 'en-US'; u.rate = 1; u.pitch = 1;
+    u.onend = done; u.onerror = done;
+    window.speechSynthesis.speak(u);
+    setTimeout(done, 4000 + text.length * 120);
+  }
+  function playTtsUrl(url, onDone){
+    var audio = ttsEl();
+    var finished = false;
+    function done(){ if(finished) return; finished = true; if(onDone) onDone(); }
+    try{ audio.pause(); }catch(e){}
+    audio.onended = null; audio.onerror = null;
+    audio.src = url;
+    currentAudio = audio;
+    audio.onended = function(){ if(currentAudio === audio) currentAudio = null; done(); };
+    audio.onerror = function(){ if(currentAudio === audio) currentAudio = null; done(); };
+    var p = audio.play();
+    if(!p || !p.then) return;
+    p.then(function(){
+      // AI 说话时关麦，避免把它自己的声音录进去
+      if(micOn) stopListening();
+    }).catch(function(){
+      // 自动播放被拦：给按钮，同时放行对话循环（否则会一直卡在"AI 说话中"）
+      currentAudio = null;
+      var chat = document.getElementById('coachChat');
+      if(chat){
+        var btn = document.createElement('button');
+        btn.className = 'cbtn cbtn-ghost';
+        btn.textContent = '🔊 点我听';
+        btn.style.marginLeft = '8px';
+        btn.onclick = function(){
+          btn.remove();
+          currentAudio = audio;
+          if(micOn) stopListening();
+          var p2 = audio.play();
+          if(p2 && p2.then){ p2.then(done).catch(done); } else { done(); }
+        };
+        chat.appendChild(btn);
+        chat.scrollTop = chat.scrollHeight;
+      }
+      done();
+    });
+  }
+  function coachSpeak(text, onDone){
+    if(!ttsOn){ if(onDone) onDone(); return; }
+    if(!text) { if(onDone) onDone(); return; }
     var c = companion(state.role);
     var uv = getUserVoice(state.role);
     var voice = uv ? uv.id : c.voice;
     var speed = uv ? uv.speed : (c.voiceSpeed || 1);
-    if(configured && voice && window.fetch){
-      var ttsCtrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-      var ttsTimer = ttsCtrl ? setTimeout(function(){ try{ ttsCtrl.abort(); }catch(e){} }, 15000) : null;
-      toast('🎙️ 正在请求真人语音...');
-      fetch(WORKER_URL + '/tts', {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ text: text, voice: voice, speed: speed }),
-        signal: ttsCtrl ? ttsCtrl.signal : undefined
-      }).then(function(res){
-        if(!res.ok) throw new Error('HTTP ' + res.status);
-        return res.blob();
-      }).then(function(blob){
-        if(ttsTimer) clearTimeout(ttsTimer);
-        var url = URL.createObjectURL(blob);
-        var audio = new Audio(url);
-        currentAudio = audio;
-        audio.onended = function(){ try{ URL.revokeObjectURL(url); }catch(e){} currentAudio = null; done(); };
-        audio.onerror = function(){ try{ URL.revokeObjectURL(url); }catch(e){} currentAudio = null; done(); };
-        audio.play().then(function(){
-          toast('🔊 正在播放真人音色');
-          // AI 说话时关掉麦克风，防止它自己的声音被录进去
-          if(micOn) stopListening();
-        }).catch(function(){
-          // iOS 自动播放被拦：放一个按钮让用户手动点一下播放真人音色
-          currentAudio = null;
-          var chat = document.getElementById('coachChat');
-          if(chat){
-            var btn = document.createElement('button');
-            btn.className = 'cbtn cbtn-ghost';
-            btn.textContent = '🔊 点我听';
-            btn.style.marginLeft = '8px';
-            btn.onclick = function(){
-              btn.remove();
-              currentAudio = audio;
-              if(micOn) stopListening();
-              audio.play().then(done).catch(function(){ done(); });
-            };
-            chat.appendChild(btn);
-            chat.scrollTop = chat.scrollHeight;
-          }
-        });
-      }).catch(function(err){
-        if(ttsTimer) clearTimeout(ttsTimer);
-        toast('⚠️ 语音请求失败: ' + err.message);
-        done();
-      });
-    } else {
-      toast('⚠️ TTS未配置: configured=' + configured + ' voice=' + (voice||'空'));
-      speakBrowser();
-    }
+    var key = voice + '|' + speed + '|' + text;
+    if(ttsCache[key]){ playTtsUrl(ttsCache[key], onDone); return; }
+    if(!(configured && voice && window.fetch)){ speakBrowser(text, onDone); return; }
+    var ttsCtrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var ttsTimer = ttsCtrl ? setTimeout(function(){ try{ ttsCtrl.abort(); }catch(e){} }, 15000) : null;
+    fetch(WORKER_URL + '/tts', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ text: text, voice: voice, speed: speed }),
+      signal: ttsCtrl ? ttsCtrl.signal : undefined
+    }).then(function(res){
+      if(!res.ok) throw new Error('HTTP ' + res.status);
+      return res.blob();
+    }).then(function(blob){
+      if(ttsTimer) clearTimeout(ttsTimer);
+      var url = URL.createObjectURL(blob);
+      cachePut(key, url);
+      playTtsUrl(url, onDone);
+    }).catch(function(err){
+      if(ttsTimer) clearTimeout(ttsTimer);
+      if(err && err.name === 'AbortError') return;
+      speakBrowser(text, onDone);
+    });
   }
 
   /* ---- 「提示我一句」：卡壳时给出可接话的地道英文句（本地语料，不写历史） ---- */
@@ -2068,6 +2583,69 @@ ssRestoreView();
     stopCurrentTTS();
     coachSpeak(lastAIText);
   }
+
+  /* ---- 课后点评：一次额外调用，只看最近 14 句，不写历史、不改对话 ---- */
+  function showReviewModal(title, initial){
+    var old = document.getElementById('rvMask');
+    if(old) old.remove();
+    var mask = document.createElement('div');
+    mask.className = 'tm-mask';
+    mask.id = 'rvMask';
+    mask.innerHTML = '<div class="tm-panel">'
+      + '<div class="tm-title">' + title + '</div>'
+      + '<div class="tm-hint">只回看最近 14 句，不写入对话历史。点一次 ≈ 消耗一次对话额度，不用时不点即可。</div>'
+      + '<div class="tm-area" id="rvBody" style="white-space:pre-wrap;overflow:auto;font-size:14px;line-height:1.75">' + esc(initial) + '</div>'
+      + '<div class="tm-actions"><button class="tm-ok" id="rvClose">知道了</button></div></div>';
+    document.body.appendChild(mask);
+    document.getElementById('rvClose').onclick = function(){ mask.remove(); };
+    return mask;
+  }
+  function setReviewText(t){
+    var el = document.getElementById('rvBody');
+    if(el){ el.textContent = t; el.scrollTop = el.scrollHeight; }
+  }
+  function coachReview(){
+    if(aiBusy){ toast('等 Ta 说完再点评'); return; }
+    if(state.history.length < 4){ toast('先聊几句，再让 Ta 点评'); return; }
+    var lines = state.history.slice(-14).map(function(m){
+      return (m.role === 'user' ? 'LEARNER: ' : 'PARTNER: ') + String(m.content).replace(/\s+/g, ' ').slice(0, 300);
+    }).join('\n');
+    var sys = 'You are a warm but precise English speaking coach. Below is a short spoken practice between a Chinese learner (LEARNER) and an English partner (PARTNER). '
+      + 'Pick at most 3 things the LEARNER said that a native speaker would phrase differently or more naturally (word choice, collocation, tense, article, or a missing linking phrase). '
+      + 'Reply in Chinese, plain text, no markdown, no emoji, no preamble. For each item use exactly this shape:\n'
+      + '1. 你说的：<original>\n   更地道：<better English>\n   为什么：<one short Chinese sentence>\n'
+      + 'If the learner already sounded natural, say so briefly and give one upgrade expression. Never invent mistakes. Max 3 items.';
+    showReviewModal('📝 课后点评', '正在回看刚才的对话…');
+    var ctrl = new AbortController();
+    fetch(WORKER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role: state.role, systemPrompt: sys, message: lines, history: [], corpusHits: '', relationship: '' }),
+      signal: ctrl.signal
+    }).then(function(res){
+      if(!res.ok){ return res.text().then(function(){ throw new Error('HTTP ' + res.status); }); }
+      var reader = res.body.getReader(), dec = new TextDecoder(), acc = '';
+      function pump(){
+        return reader.read().then(function(r){
+          if(r.done){ setReviewText(acc || '（没有返回内容）'); return; }
+          var chunk = dec.decode(r.value, {stream:true});
+          chunk.split('\n').forEach(function(line){
+            if(line.indexOf('data:') !== 0) return;
+            var payload = line.slice(5).trim();
+            if(!payload || payload === '[DONE]') return;
+            try{
+              var d = JSON.parse(payload).choices[0].delta.content;
+              if(d){ acc += d; setReviewText(acc); }
+            }catch(_){}
+          });
+          return pump();
+        });
+      }
+      return pump();
+    }).catch(function(err){
+      setReviewText('点评失败：' + (err && err.message ? err.message : err) + '\n（如果是当天免费额度用完，明天会自动恢复）');
+    });
+  }
   function rebuildChat(){
     var chat = document.getElementById('coachChat'); if(!chat) return;
     chat.innerHTML = '';
@@ -2095,9 +2673,14 @@ ssRestoreView();
   var _iosAudioUnlocked = false;
   function unlockAudioForIOS(){
     if(_iosAudioUnlocked) return;
+    _iosAudioUnlocked = true;
     try{
-      var silent = 'data:audio/wav;base64,UklGRl4RAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YToRAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
-      var a = new Audio(silent); a.play().then(function(){ _iosAudioUnlocked = true; }).catch(function(){});
+      // 用同一个常驻 <audio> 在手势内播放一次，之后它就能被代码自动播放（iOS 关键一步）
+      var a = ttsEl();
+      a.muted = true;
+      var p = a.play();
+      if(p && p.then){ p.then(function(){ a.muted = false; }).catch(function(){}); }
+      else { a.muted = false; }
     }catch(e){}
     try{
       // 同步解锁 speechSynthesis
@@ -2124,10 +2707,13 @@ ssRestoreView();
     bumpStats(); persistSession(); renderStats();
     var myReqId = ++requestId;  // 记录本次请求 ID
     var aiBody = coachAppend('ai', '…', 'c-stream');
+    if(micOn) stopListening();          // 已收到用户这句，先关麦，避免录到 AI 的声音
     var autoPick = state.auto ? coachPickTopics(text) : null;
-    // 语料后台加载，不阻塞 AI 请求
+    // 对白语料后台加载，不阻塞 AI 请求
     ensureDialogue(autoPick ? state.topics.concat(autoPick) : state.topics.slice());
     updateDialogueStatus();
+    // 话题语料 corpus_topic.js 按需加载（进入语伴时不预拉，避免一进来就卡）
+    if(!window.CORPUS){ try{ await ensureCorpus(1600); }catch(e){} }
     var ret = coachRetrieve(state.topics, text);
     if(ret.topics && ret.topics.length && !state.auto) syncTopicChips();
     aiBusy = true;
@@ -2159,7 +2745,7 @@ ssRestoreView();
             coachShowTip(ret.tip);
             coachSpeak(aiText, function(){
               aiBusy = false;
-              if(handsFree && micOn) resumeListening();
+              if(handsFree) resumeListening();
             });
             return;
           }
@@ -2193,19 +2779,39 @@ ssRestoreView();
     if(chat) chat.scrollTop = chat.scrollHeight;
   }
 
-  /* ---- 免按钮对话：常驻监听 + AI 说话时防自听 + 随时开口打断 ---- */
+  /* ---- 免提对话：AI 说完自动重开麦克风；说完停顿 2.6s 自动发送 ---- */
   function stopListening(){
     clearTimeout(silenceTimer);
     if(rec){ try{ rec.stop(); }catch(e){} rec = null; }
     micOn = false;
     var b = document.getElementById('coachVoice');
     if(b){ b.classList.remove('on'); b.textContent = ''; }
+    var hb = document.getElementById('coachHands');
+    if(hb) hb.classList.remove('active');
+  }
+  function setHandsFreeUI(){
+    var hb = document.getElementById('coachHands');
+    if(hb){ hb.classList.toggle('active', !!handsFree); hb.textContent = '🎤'; }
   }
   function resumeListening(){
-    // 手动模式：AI 说完后不自动恢复监听，等用户自己点麦克风
+    if(!handsFree) return;
+    stopListening();
+    setTimeout(function(){
+      if(!handsFree || aiBusy) return;
+      if(!micOn) startListening();
+      if(!micOn) return;
+      var vel = document.getElementById('coachVoice');
+      if(vel){ vel.textContent = '🎙️ 在听，直接说'; vel.classList.add('on'); }
+      setHandsFreeUI();
+    }, 380);
   }
   function startListening(){
-    if(!window.SpeechRecognition && !window.webkitSpeechRecognition){ return; }
+    if(!window.SpeechRecognition && !window.webkitSpeechRecognition){
+      handsFree = false;
+      setHandsFreeUI();
+      toast('这个浏览器不支持语音识别，可以打字聊（AI 语音回复正常）');
+      return;
+    }
     var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     try{
       rec = new SR();
@@ -2219,45 +2825,83 @@ ssRestoreView();
           if(e.results[i].isFinal) finalText += t + ' '; else interim = t;
         }
         clearTimeout(silenceTimer);
-        // 把识别结果实时放到输入框里，用户确认后再发送
         var inp = document.getElementById('coachText');
         if(inp) inp.value = (finalText + interim).trim();
-        silenceTimer = setTimeout(function(){
-          stopListening();
-          var hb = document.getElementById('coachHands');
-          if(hb){ hb.classList.remove('active'); hb.textContent = '🎤'; }
-          var inp2 = document.getElementById('coachText');
-          if(inp2 && inp2.value.trim()){
-            inp2.focus();
-            toast('识别完成，确认后点发送');
-          } else {
-            var vel = document.getElementById('coachVoice');
-            if(vel) vel.textContent = '🎙️ 没听清，试试打字或靠近麦克风';
-          }
-        }, 3000);
         var el = document.getElementById('coachVoice');
         if(el) el.textContent = '🎙️ 正在听…';
+        silenceTimer = setTimeout(function(){
+          clearTimeout(silenceTimer);
+          var inp2 = document.getElementById('coachText');
+          var said = inp2 ? inp2.value.trim() : '';
+          var wasHandsFree = handsFree;
+          if(rec){ try{ rec.stop(); }catch(e){} rec = null; }
+          micOn = false;
+          var hb = document.getElementById('coachHands');
+          if(hb) hb.classList.remove('active');
+          if(!said){
+            var vel = document.getElementById('coachVoice');
+            if(vel) vel.textContent = '🎙️ 没听清，再说一次或直接打字';
+            if(wasHandsFree && !aiBusy) setTimeout(function(){ if(handsFree) resumeListening(); }, 700);
+            return;
+          }
+          if(wasHandsFree && !aiBusy){
+            // 免提：识别完直接发出去，不用再点发送
+            if(inp2) inp2.value = '';
+            finalText = '';
+            var vel2 = document.getElementById('coachVoice');
+            if(vel2){ vel2.textContent = ''; vel2.classList.remove('on'); }
+            coachSend(said);
+            return;
+          }
+          var vel3 = document.getElementById('coachVoice');
+          if(vel3){ vel3.textContent = '识别完成，确认后点发送'; vel3.classList.add('on'); }
+          if(inp2) inp2.focus();
+          toast('识别完成，确认后点发送');
+        }, 2600);
       };
       rec.onend = function(){
-        // 手动模式：不自动重启，等用户再点麦克风
+        // 免提模式下若意外断开（部分安卓会主动结束），自动续上
+        if(handsFree && !aiBusy && !micOn){
+          micOn = false;
+          setTimeout(function(){ if(handsFree && !aiBusy && !micOn) resumeListening(); }, 500);
+        }
       };
       rec.onerror = function(ev){
-        if(ev.error === 'not-allowed'){ stopListening(); toast('没有麦克风权限'); }
+        if(ev.error === 'not-allowed'){
+          stopListening();
+          handsFree = false;
+          setHandsFreeUI();
+          toast('没有麦克风权限，已关闭免提');
+        }else if(ev.error === 'no-speech'){
+          // 静音超时属正常，交给 onend 处理
+        }
       };
       rec.start();
       micOn = true;
+      setHandsFreeUI();
     }catch(e){ micOn = false; }
   }
   function toggleHandsFree(){
+    // 点🎤 = 免提开关（开：说完自动发；关：手动点一次说一句）
     if(micOn){ stopListening(); }
-    else {
-      if(aiBusy){ toast('等AI说完再说'); return; }
+    handsFree = !handsFree;
+    try{ localStorage.setItem('qingxue_handsfree', handsFree ? '1' : '0'); }catch(e){}
+    if(aiBusy) stopCurrentTTS();
+    if(handsFree){
+      aiBusy = false;
       startListening();
+      if(micOn){
+        var vel = document.getElementById('coachVoice');
+        if(vel){ vel.textContent = '🎙️ 在听，说完自动发送'; vel.classList.add('on'); }
+        toast('免提已开：说话 → 自动发送 → AI 语音回复 → 继续听');
+      }
+    }else{
+      stopListening();
+      var vel2 = document.getElementById('coachVoice');
+      if(vel2){ vel2.textContent = '免提已关，点🎤开始说话'; vel2.classList.add('on'); }
+      toast('免提已关：每次点🎤说一句');
     }
-    var b = document.getElementById('coachHands');
-    if(b){ b.classList.toggle('active', micOn); b.textContent = '🎤'; }
-    var vel = document.getElementById('coachVoice');
-    if(vel){ vel.textContent = micOn ? '🎙️ 正在听…点🎤停止' : '🎙️ 点击🎤开始说话'; vel.classList.toggle('on', !!micOn); }
+    setHandsFreeUI();
   }
 
   /* ---- 话题标签渲染（多选 + EnglishPod 场景可搜索） ---- */
@@ -2418,9 +3062,11 @@ ssRestoreView();
       return;
     }
     var opener = sceneOpener(state.role, state.sessionScene);
+    var chatBox = document.getElementById('coachChat');
+    if(chatBox) chatBox.innerHTML = '';   // 去掉"你先说第一句"的占位，避免和开场白重复
     coachAppend('ai', opener);
     lastAIText = opener;
-    if(ttsOn) coachSpeak(opener, function(){});
+    if(ttsOn) coachSpeak(opener, function(){ if(handsFree) resumeListening(); });
     toast('已按场景匹配话题，' + (companion(state.role).name) + '先开口了');
   }
   function openScenePanel(){
@@ -2582,13 +3228,19 @@ ssRestoreView();
       else { toast(legacyCopy() ? '备份内容已复制' : '复制失败：浏览器不支持剪贴板'); }
     });
     document.getElementById('backupPaste').addEventListener('click', function(){
-      var text = prompt('把「📋 复制备份」得到的 JSON 粘贴到这里，点确定恢复语伴数据：');
-      if(!text || !text.trim()) return;
-      try{
-        var data = JSON.parse(text);
-        if(doImportCoach(data)){ toast('恢复成功！刷新页面后生效'); close(); }
-        else { toast('恢复失败：格式不对'); }
-      }catch(err){ toast('恢复失败：不是有效的备份文本'); }
+      close();
+      askTextModal({
+        title: '粘贴语伴备份',
+        hint: '把「📋 复制备份」得到的 JSON 粘进来，点确定恢复语伴数据。',
+        onOk: function(text){
+          if(!text || !text.trim()) return;
+          try{
+            var data = JSON.parse(text);
+            if(doImportCoach(data)){ toast('恢复成功！刷新页面后生效'); }
+            else { toast('恢复失败：格式不对'); }
+          }catch(err){ toast('恢复失败：不是有效的备份文本'); }
+        }
+      });
     });
     document.getElementById('backupImport').addEventListener('click', function(){
       document.getElementById('backupFile').click();
@@ -2666,16 +3318,22 @@ ssRestoreView();
     });
     var relPaste = document.getElementById('relPaste');
     if(relPaste) relPaste.addEventListener('click', function(){
-      var text = prompt('把「📋 复制备份」得到的 JSON 粘贴到这里，点确定恢复：');
-      if(!text || !text.trim()) return;
-      try{
-        var d = JSON.parse(text);
-        if(!d || !d.role || d.role !== state.role) throw new Error('不是这个语伴的备份');
-        if(d.history && Array.isArray(d.history)) try{ localStorage.setItem(histKey(state.role), JSON.stringify(d.history)); }catch(e){}
-        if(d.memory && Array.isArray(d.memory)) try{ localStorage.setItem(memKey(state.role), JSON.stringify(d.memory)); }catch(e){}
-        if(typeof d.relationship === 'string') try{ localStorage.setItem(relKey(state.role), d.relationship); }catch(e){}
-        toast('恢复成功！刷新页面后生效'); close();
-      }catch(err){ toast('恢复失败：不是有效的备份文本'); }
+      close();
+      askTextModal({
+        title: '粘贴语伴备份',
+        hint: '只恢复当前这个语伴（' + c.name + '）的对话历史、长期记忆和关系档案。',
+        onOk: function(text){
+          if(!text || !text.trim()) return;
+          try{
+            var d = JSON.parse(text);
+            if(!d || !d.role || d.role !== state.role) throw new Error('不是这个语伴的备份');
+            if(d.history && Array.isArray(d.history)) try{ localStorage.setItem(histKey(state.role), JSON.stringify(d.history)); }catch(e){}
+            if(d.memory && Array.isArray(d.memory)) try{ localStorage.setItem(memKey(state.role), JSON.stringify(d.memory)); }catch(e){}
+            if(typeof d.relationship === 'string') try{ localStorage.setItem(relKey(state.role), d.relationship); }catch(e){}
+            toast('恢复成功！刷新页面后生效');
+          }catch(err){ toast('恢复失败：不是这个语伴的有效备份'); }
+        }
+      });
     });
     var chatExport = document.getElementById('chatExport');
     if(chatExport) chatExport.addEventListener('click', function(){
@@ -2745,6 +3403,7 @@ ssRestoreView();
     stopListening(); stopCurrentTTS();
     var app = document.getElementById('app');
     if(!app) return;
+    loadCorpus();   // 后台预取话题语料，不阻塞界面（第一条消息还会兜底等最多 1.6s）
 
     var rolesHtml = '';
     ROLE_ORDER.forEach(function(r){
@@ -2833,7 +3492,7 @@ ssRestoreView();
       + '@media (max-width:600px){.topbar-inner{gap:5px;padding-left:10px;padding-right:10px}.topbar .navlink{padding:0 6px;font-size:13px}.topbar .brand{font-size:15px;gap:5px}.topbar .brand-mark{width:22px;height:22px;font-size:14px}.crole-btn{flex:1 1 46%}}'
       + '</style>'
       + '<div class="coach">'
-      +   '<div class="coach-head"><h2>语伴</h2><p>选一个语伴和话题，开口聊 — AI 记得你们之间的事，越聊越熟，顺带把地道表达说给你听</p></div>'
+      +   '<div class="coach-head"><h2>语伴</h2><p>选一个语伴和话题开口聊 · 免提默认开启：说话 → 自动发送 → 语音回复 → 继续听，不用反复点麦克风</p></div>'
       +   '<div class="coach-stats" id="coachStats"></div>'
       +   '<div class="crole-row" id="coachRoles">' + rolesHtml + '</div>'
       +   '<div class="coach-bar">'
@@ -2852,10 +3511,11 @@ ssRestoreView();
       +     '<button class="cbtn cbtn-ghost" id="coachRehear" title="AI 没听清 / 你想重录：重新识别一次">🔁 重说</button>'
       +     '<button class="cbtn cbtn-ghost" id="coachRetract" title="撤下我刚说的最后一句，重说">✖ 我说错了</button>'
       +     '<button class="cbtn cbtn-ghost" id="coachReplay" title="再听一遍 AI 刚才的话，跟着读">🔊 再听一遍</button>'
+      +     '<button class="cbtn cbtn-ghost" id="coachReview" title="聊完让 AI 挑几处更地道的说法（会消耗一次对话额度）">📝 课后点评</button>'
       +   '</div>'
       +   '<div class="coach-input">'
-      +     '<button class="cbtn mic-btn" id="coachHands" title="点一下开始说话，说完3秒后自动停">🎤</button>'
-      +     '<textarea id="coachText" rows="2" placeholder="打字或语音识别后确认，Enter 发送，Shift+Enter 换行"></textarea>'
+      +     '<button class="cbtn mic-btn' + (handsFree?' active':'') + '" id="coachHands" title="免提开关：开=说完自动发送并继续听，关=每次点一下说一句">🎤</button>'
+      +     '<textarea id="coachText" rows="2" placeholder="免提已开：直接开口说，说完停顿自动发送 · 也可打字，Enter 发送"></textarea>'
       +     '<button class="cbtn" id="coachSend">发送</button>'
       +   '</div>'
       +   '<div class="ctip" id="coachTip"></div>'
@@ -2892,6 +3552,7 @@ ssRestoreView();
     var reBtn = document.getElementById('coachRehear'); if(reBtn) reBtn.addEventListener('click', coachRehear);
     var rtBtn = document.getElementById('coachRetract'); if(rtBtn) rtBtn.addEventListener('click', coachRetract);
     var rpBtn = document.getElementById('coachReplay'); if(rpBtn) rpBtn.addEventListener('click', coachReplay);
+    var rvBtn = document.getElementById('coachReview'); if(rvBtn) rvBtn.addEventListener('click', coachReview);
     var vpBtn = document.getElementById('coachVoicePicker');
     if(vpBtn) vpBtn.addEventListener('click', openVoicePicker);
     bindSceneFilter();
@@ -2923,7 +3584,6 @@ ssRestoreView();
 /* 初始渲染放在陪练函数定义之后，确保 #/coach 分支能调用 renderCoach */
 render();
 </script>
-<script src="./corpus_topic.js"></script>
 <link rel="manifest" href="./manifest.webmanifest">
 <script>
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {

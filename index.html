@@ -1392,7 +1392,7 @@ ssRestoreView();
     { file:'./docs_dialogues.js', topics:['点餐美食','出国场景','出国过境英语','点餐美食补充','旅行出差'] }
   ];
 
-  var state = { role:'nicole', topics:['通用日常'], auto:true, history:[], tipSeen:{}, rel:{} };
+  var state = { role:'nicole', topics:['通用日常'], auto:true, history:[], tipSeen:{}, rel:{}, sessionScene:'' };
   var rec = null, finalText = '', silenceTimer = null, micOn = false, aiBusy = false, lastAIText = '', ttsOn = true;
   var handsFree = false, abortCtrl = null, currentAudio = null, travelerId = null;
   var requestId = 0;  // 跟踪请求：切换角色时旧请求回调直接丢弃
@@ -1429,15 +1429,16 @@ ssRestoreView();
   function dayKey(){ var d = new Date(); return d.getFullYear() + '-' + pad2(d.getMonth()+1) + '-' + pad2(d.getDate()); }
   function histKey(role){ return 'qingxue-coach-hist-' + role; }
   function loadHist(role){
+    if(role === 'traveler') return [];  // 旅行E人身份不固定，不保留跨会话历史
     try{ var a = JSON.parse(localStorage.getItem(histKey(role)) || 'null');
       if(Array.isArray(a)) return a.filter(function(m){ return m && m.role && typeof m.content === 'string'; }).slice(-20);
     }catch(e){}
     return [];
   }
   function persistSession(){
-    try{ localStorage.setItem(SESSION_KEY, JSON.stringify({ role: state.role, topics: state.topics, auto: state.auto, history: state.history.slice(-20) })); }catch(e){}
-    // 每个语伴单独存一份对话，切换角色不丢聊天
-    try{ localStorage.setItem(histKey(state.role), JSON.stringify(state.history.slice(-20))); }catch(e){}
+    try{ localStorage.setItem(SESSION_KEY, JSON.stringify({ role: state.role, topics: state.topics, auto: state.auto, history: state.role === 'traveler' ? [] : state.history.slice(-20) })); }catch(e){}
+    // 每个语伴单独存一份对话，切换角色不丢聊天（旅行E人例外：不保留历史）
+    if(state.role !== 'traveler'){ try{ localStorage.setItem(histKey(state.role), JSON.stringify(state.history.slice(-20))); }catch(e){} }
   }
   function restoreSession(){
     try{
@@ -1446,7 +1447,8 @@ ssRestoreView();
       if(s.role && COMPANIONS[s.role]) state.role = s.role;
       if(Array.isArray(s.topics) && s.topics.length) state.topics = s.topics.slice(0, 20);
       if(typeof s.auto === 'boolean') state.auto = s.auto;
-      if(Array.isArray(s.history)) state.history = s.history.filter(function(m){ return m && m.role && typeof m.content === 'string'; }).slice(-20);
+      if(state.role === 'traveler') state.history = [];
+      else if(Array.isArray(s.history)) state.history = s.history.filter(function(m){ return m && m.role && typeof m.content === 'string'; }).slice(-20);
     }catch(e){}
   }
   function loadStats(){ try{ var o = JSON.parse(localStorage.getItem(STATS_KEY) || 'null'); return (o && o.days) ? o.days : {}; }catch(e){ return {}; } }
@@ -1522,13 +1524,22 @@ ssRestoreView();
       var tid = getTravelerId();
       sys = sys.replace(/\{NAME\}/g, tid.name).replace(/\{NATION\}/g, tid.nation);
     }
-    sys = sys.replace('[RELATIONSHIP]', 'RELATIONSHIP FILE (things you two remember about each other):\n' + (getRel(role) || '(new acquaintances)'));
-    /* 长期记忆：把用户跨会话说过的实事注入，语伴可自然引用（不一次性全倒出来） */
-    sys += '\n\n' + getMemBlock(role);
+    if(role === 'traveler'){
+      /* 旅行E人：身份/背景不固定，不注入长期记忆和关系档案，只保留单轮上下文 */
+      sys = sys.replace('[RELATIONSHIP]', '');
+    } else {
+      sys = sys.replace('[RELATIONSHIP]', 'RELATIONSHIP FILE (things you two remember about each other):\n' + (getRel(role) || '(new acquaintances)'));
+      /* 长期记忆：把用户跨会话说过的实事注入，语伴可自然引用（不一次性全倒出来） */
+      sys += '\n\n' + getMemBlock(role);
+    }
     if(hits && hits.trim()){
       sys = sys.replace('[INJECT CORPUS]', hits.trim());
     } else {
       sys = sys.replace('[INJECT CORPUS]', '');
+    }
+    /* 本次会话场景背景（每次启动由用户设定，只作用于本轮） */
+    if(state.sessionScene && state.sessionScene.trim()){
+      sys += '\n\nSCENE & CONTEXT (set by the user for THIS conversation only):\n' + state.sessionScene + '\nOpen and steer the conversation around this scene naturally.';
     }
     sys += '\n\nLANGUAGE: Natural everyday English, short sentences (10-15 words). No baby talk, no obscure slang. One natural expression when it fits. Never correct her grammar.';
     return sys;
@@ -2073,7 +2084,7 @@ ssRestoreView();
       return;
     }
     state.history.push({role:'user', content:text});
-    remember(state.role, text);      /* 长期记忆：抽取并持久化用户自我陈述 */
+    if(state.role !== 'traveler') remember(state.role, text);   /* 长期记忆（旅行E人身份不固定，不记录） */
     coachAppend('you', text);
     bumpStats(); persistSession(); renderStats();
     var myReqId = ++requestId;  // 记录本次请求 ID
@@ -2209,7 +2220,9 @@ ssRestoreView();
       startListening();
     }
     var b = document.getElementById('coachHands');
-    if(b){ b.classList.toggle('active', micOn); b.textContent = micOn ? '🎤 正在听…再点停止' : '🎤 点我说话'; }
+    if(b){ b.classList.toggle('active', micOn); b.textContent = '🎤'; }
+    var vel = document.getElementById('coachVoice');
+    if(vel){ vel.textContent = micOn ? '🎙️ 正在听…点🎤停止' : '🎙️ 点击🎤开始说话'; vel.classList.toggle('on', !!micOn); }
   }
 
   /* ---- 话题标签渲染（多选 + EnglishPod 场景可搜索） ---- */
@@ -2248,15 +2261,10 @@ ssRestoreView();
   }
 
   function syncTopicChips(){
-    // 多选 chips 高亮同步（生活 + 主题 + EnglishPod 场景全部覆盖；子话题随所属大标签一起高亮）
+    // 严格一对一：只高亮 state.topics 里实际被选中的那个标签，不做任何子话题/大标签连带
     document.querySelectorAll('#app button[data-topic]').forEach(function(b){
       var t = b.getAttribute('data-topic');
-      var on = state.topics.indexOf(t) >= 0;
-      if(!on){
-        var subs = BIG_TAG[t];
-        if(subs && subs.some(function(s){ return state.topics.indexOf(s) >= 0; })) on = true;
-      }
-      b.classList.toggle('active', on);
+      b.classList.toggle('active', state.topics.indexOf(t) >= 0);
     });
   }
   function coachToggleTopic(t){
@@ -2300,7 +2308,8 @@ ssRestoreView();
     bindSceneFilter();
     resetChatUI();
     var c = companion(r);
-    toast('已切换到 ' + (c ? c.name : r) + '，你说第一句吧');
+    state.sessionScene = '';
+    openScenePanel();
   }
 
   function resetChatUI(){
@@ -2322,6 +2331,69 @@ ssRestoreView();
       otis: 'Hey, partner. Ready to talk shop — or something else?'
     };
     return w[role] || ('Hey, good to see you. What shall we talk about?');
+  }
+
+  /* ---- 场景化新会话启动：输入场合背景 → 匹配话题 → 语伴先开口 ---- */
+  function sceneMatchTopics(scene){
+    if(!scene || !scene.trim()) return [];
+    var kw = scene.toLowerCase(), hits = [];
+    Object.keys(TOPIC_KW).forEach(function(t){
+      var score = 0;
+      (TOPIC_KW[t] || []).forEach(function(k){ if(kw.indexOf(k.toLowerCase()) >= 0) score++; });
+      if(score > 0) hits.push({ t: t, s: score });
+    });
+    LIFE_TOPICS.concat(Object.keys(BIG_TAG), THEME_GROUPS.map(function(g){ return g.name; })).forEach(function(t){
+      if(scene.indexOf(t) >= 0) hits.push({ t: t, s: 2 });
+    });
+    hits.sort(function(a,b){ return b.s - a.s; });
+    return hits.slice(0, 3).map(function(m){ return m.t; });
+  }
+  function sceneOpener(role, scene){
+    var c = companion(role);
+    if(role === 'traveler'){
+      var tid = getTravelerId();
+      var h = 'Hey! I\u2019m ' + tid.name + ', from ' + tid.nation + '. Nice to meet you.';
+      return scene ? (h + ' So let\u2019s talk about what you have in mind — where shall we start?') : (h + ' Where are you off to today?');
+    }
+    var head = welcomeFor(role);
+    return scene ? (head + ' I\u2019m all ears — tell me about it and let\u2019s dig in.') : head;
+  }
+  function startNewSession(scene){
+    state.history = [];
+    state.sessionScene = (scene || '').slice(0, 400);
+    var matched = sceneMatchTopics(state.sessionScene);
+    matched.forEach(function(t){ if(state.topics.indexOf(t) < 0) state.topics.push(t); });
+    if(!matched.length && !state.topics.length) state.topics = ['通用日常'];
+    persistSession(); syncTopicChips(); updateDialogueStatus(); rebuildChat();
+    var opener = sceneOpener(state.role, state.sessionScene);
+    coachAppend('ai', opener);
+    lastAIText = opener;
+    if(ttsOn) coachSpeak(opener, function(){});
+    toast('已按场景匹配话题，' + (companion(state.role).name) + '先开口了');
+  }
+  function openScenePanel(){
+    var old = document.getElementById('scenePanel');
+    if(old) old.remove();
+    var c = companion(state.role);
+    var wrap = document.createElement('div');
+    wrap.className = 'rel-mask';
+    wrap.id = 'scenePanel';
+    wrap.innerHTML = '<div class="rel-panel" style="max-width:540px;">'
+      + '<div class="rel-head"><strong>🕊️ 和「' + esc(c.name) + '」开始一段新对话</strong><button class="cbtn cbtn-ghost" id="sceneClose">✕</button></div>'
+      + '<p class="rel-hint">先告诉我这次对话的<b>场合和背景</b>（中文或英文都行）。我会自动匹配话题，然后由语伴先开口。</p>'
+      + '<textarea id="sceneText" rows="3" placeholder="例如：我正要给一位美国客户开电话会介绍一款牙科铣刀 / 我在机场准备值机 / 周末想聊聊上次的瑜伽课"></textarea>'
+      + '<div class="rel-actions" style="justify-content:space-between;">'
+      + '<button class="cbtn cbtn-ghost" id="sceneSkip">🎲 随机开场</button>'
+      + '<button class="cbtn" id="sceneStart">🚀 开始对话</button>'
+      + '</div></div>';
+    document.body.appendChild(wrap);
+    document.getElementById('sceneClose').addEventListener('click', function(){ wrap.remove(); });
+    document.getElementById('sceneSkip').addEventListener('click', function(){ wrap.remove(); startNewSession(''); });
+    document.getElementById('sceneStart').addEventListener('click', function(){
+      var s = document.getElementById('sceneText').value.trim(); wrap.remove(); startNewSession(s);
+    });
+    var st = document.getElementById('sceneText');
+    if(st){ st.focus(); st.addEventListener('keydown', function(ev){ if(ev.key === 'Enter' && !ev.shiftKey){ ev.preventDefault(); document.getElementById('sceneStart').click(); } }); }
   }
 
   /* ---- 音色选择器 ---- */
@@ -2404,9 +2476,9 @@ ssRestoreView();
       var roles = ['nicole','mike','stan','traveler','ahmet','otis'];
       roles.forEach(function(r){
         data.roles[r] = {
-          history: loadHist(r),
-          memory: loadMem(r),
-          relationship: getRel(r)
+          history: r === 'traveler' ? [] : loadHist(r),
+          memory: r === 'traveler' ? [] : loadMem(r),
+          relationship: r === 'traveler' ? '' : getRel(r)
         };
       });
       data.voices = JSON.parse(localStorage.getItem('coach_voices') || '{}');
@@ -2430,6 +2502,7 @@ ssRestoreView();
           var data = JSON.parse(ev.target.result);
           if(!data.roles) throw new Error('格式不对');
           Object.keys(data.roles).forEach(function(r){
+            if(r === 'traveler') return;  // 旅行E人不恢复长期数据
             var d = data.roles[r];
             if(d.history) try{ localStorage.setItem(histKey(r), JSON.stringify(d.history)); }catch(e){}
             if(d.memory) try{ localStorage.setItem(memKey(r), JSON.stringify(d.memory)); }catch(e){}
@@ -2595,9 +2668,9 @@ ssRestoreView();
       + '@keyframes blink{50%{opacity:0}}'
       + '.coach-voice{margin:0;padding:8px 12px;background:var(--accent-soft);color:var(--ink);border-radius:8px;font-size:13px;min-height:20px;display:none}'
       + '.coach-voice.on{display:block}'
-      + '.coach-input{display:flex;gap:8px;align-items:center}'
-      + '.coach-input input{flex:1;padding:11px 12px;border:1px solid var(--hair);border-radius:10px;background:var(--surface);color:var(--ink);outline:none}'
-      + '.coach-input input:focus{border-color:var(--accent)}'
+      + '.coach-input{display:flex;gap:8px;align-items:flex-end}'
+      + '.coach-input textarea{flex:1;padding:10px 12px;border:1px solid var(--hair);border-radius:10px;background:var(--surface);color:var(--ink);outline:none;font:inherit;line-height:1.5;resize:none;max-height:130px;min-height:44px;box-sizing:border-box}'
+      + '.coach-input textarea:focus{border-color:var(--accent)}'
       + '.mic-btn{font-size:15px;font-weight:600;min-width:72px;padding:11px 14px;white-space:nowrap}'
       + '.coach-stats{font-size:12px;color:var(--faint);margin-top:2px}'
       + '.coach-loaded{font-size:12px;color:var(--faint);margin:2px 0 6px}'
@@ -2628,7 +2701,7 @@ ssRestoreView();
       +   '<div class="crole-row" id="coachRoles">' + rolesHtml + '</div>'
       +   '<div class="coach-bar">'
       +     '<button class="cbtn' + (state.auto?' active':'') + '" id="coachAuto">' + (state.auto?'✨ 自动匹配':'📌 手动选话题') + '</button>'
-      +     '<button class="cbtn cbtn-ghost" id="coachRel">📋 关系档案</button>'
+      +     (state.role === 'traveler' ? '' : '<button class="cbtn cbtn-ghost" id="coachRel">📋 关系档案</button>')
       +     '<button class="cbtn cbtn-ghost" id="coachVoicePicker">🎙️ 音色</button>'
       +     '<button class="cbtn cbtn-ghost" id="coachBackup">💾 备份/恢复</button>'
       +   '</div>'
@@ -2645,8 +2718,8 @@ ssRestoreView();
       +     '<button class="cbtn cbtn-ghost" id="coachReplay" title="再听一遍 AI 刚才的话，跟着读">🔊 再听一遍</button>'
       +   '</div>'
       +   '<div class="coach-input">'
-      +     '<button class="cbtn mic-btn" id="coachHands" title="点一下开始说话，说完3秒后自动停">🎤 说话</button>'
-      +     '<input id="coachText" placeholder="打字或语音识别后确认，Enter 发送" />'
+      +     '<button class="cbtn mic-btn" id="coachHands" title="点一下开始说话，说完3秒后自动停">🎤</button>'
+      +     '<textarea id="coachText" rows="2" placeholder="打字或语音识别后确认，Enter 发送，Shift+Enter 换行"></textarea>'
       +     '<button class="cbtn" id="coachSend">发送</button>'
       +   '</div>'
       +   '<div class="ctip" id="coachTip"></div>'
@@ -2667,9 +2740,13 @@ ssRestoreView();
       var inp = document.getElementById('coachText');
       coachSend(inp.value); inp.value='';
     });
-    document.getElementById('coachText').addEventListener('keydown', function(ev){
-      if(ev.key === 'Enter'){ coachSend(this.value); this.value=''; }
+    var ct = document.getElementById('coachText');
+    ct.addEventListener('keydown', function(ev){
+      if(ev.key === 'Enter' && !ev.shiftKey){ ev.preventDefault(); coachSend(this.value); this.value=''; autoGrowText(); }
+      // Shift+Enter 由浏览器默认插入换行
     });
+    function autoGrowText(){ ct.style.height = 'auto'; ct.style.height = Math.min(ct.scrollHeight, 130) + 'px'; }
+    ct.addEventListener('input', autoGrowText);
     document.getElementById('coachHands').addEventListener('click', toggleHandsFree);
     document.getElementById('coachAuto').addEventListener('click', toggleAuto);
     document.getElementById('coachRel').addEventListener('click', openRelPanel);
@@ -2694,6 +2771,8 @@ ssRestoreView();
     };
     app.addEventListener('click', app._coachTopicHandler);
     // 手动模式：不自动启动监听，等用户点麦克风按钮
+    // 每次进入语伴版块，先让用户设定本次对话的场合背景
+    openScenePanel();
   };
 
   /* ---- 调试钩子（本地端到端验证用）：暴露自动选话题 / 检索 / 跨源索引 ---- */

@@ -4,7 +4,7 @@
    - 静态资源（js/png/webmanifest）：stale-while-revalidate → 秒开 + 后台更新
    - 跨域（Cloudflare Worker 对话/语音）：不拦截，直接放行
    升级方式：改 CACHE 版本号即可清掉旧缓存。 */
-var CACHE = 'qingxue-v5';
+var CACHE = 'qingxue-v6';
 var PRECACHE = ['./', './index.html', './words.json', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 
 self.addEventListener('install', function(e){

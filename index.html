@@ -2329,6 +2329,51 @@ ssRestoreView();
     '职业规划':     { src:['工作商务'], re:/Interview|Job Hunting|Raise|Fired|Paycheck|Work Experience|Strengths|Weaknesses|Salary/i },
     '亲密关系':     { src:['家庭孩子'], re:/I.m Sorry|Girlfriend|Wedding|Divorce|Romance|Song/i }
   };
+  /* ---- EnglishPod「docx 版」真实对白（englishpod_clean.js，195KB / 355 集 / 2,532 句）----
+     和 4.6MB 的 englishpod_dialogues.js 是同一批素材，但来源不同：旧文件是 PDF 转文本，
+     换行被排版切碎、混着 Marco/Erica 的主持讲解，365 集里 220 集切不出东西；这份直接从
+     docx 原文解析，一行一句、只有对话本身。所以语伴侧以它为准，旧文件只留给「剧集」播放。
+     代价是场景只剩 7 类（Daily Life / The Weekend / Global View / The Office …），比话题粗，
+     因此再用「集名关键词」把每一集投到具体话题（EPC_FINE）。 */
+  var EPC_SCENE_TOPIC = {
+    'Daily Life':'日常闲聊', 'The Weekend':'日常闲聊', 'Global View':'日常闲聊', 'Series':'日常闲聊',
+    'The Office':'工作商务', 'Difficult Customer':'工作商务', 'Presentation':'工作商务',
+    'Interview Skills':'职业规划', 'Small Talk':'社交礼仪'
+  };
+  /* 话题 → 集名正则。命中即把整集对白投进该话题；一集可命中多个话题（Going To The Gym
+     既属健康养生，也属「运动对生命健康的意义」）。刻意写紧：宁可少投，也不把急诊对白
+     塞进瑜伽、把婚礼对白塞进创业。 */
+  var EPC_FINE = {
+    '健康养生':        /gym|diet|junk food|health food|doctor|toothache|pharmacy|allerg|first aid|emergency|calling 911|cpr|insurance|botox|chicken pox|feel so good/i,
+    '运动对生命健康的意义': /gym|diet|soccer|volleyball|hockey|baseball|boxing|golf|skiing|swim faster|f1 racing|adventure sports|roller coaster/i,
+    '瑜伽':            /gym|diet|health food|try to sleep|stretch/i,
+    '中国养生文化':    /chinese medicine|acupuncture|pharmacy|health food|herbal/i,
+    '牙科行业与前景':  /dentist|toothache|teeth/i,
+    '育儿与教育':      /baby talk|grounded|report card|nanny|picking a university|registering for university|roommate|simple math|learning the piano|high school reunion/i,
+    '亲子关系':        /baby talk|grounded|report card|nanny|daddy please|family barbecue|getting a pet|the miracle of life|talking to your roomate/i,
+    '育儿观对比':      /baby talk|grounded|nanny|report card|getting a nanny/i,
+    '亲密关系':        /breaking up|new boyfriend|wedding doubts|here comes the bride|divorce|online dating|pick up lines|be my girlfriend|i.m sorry i love you|my new boyfriend/i,
+    '旅行出差':        /airport|hotel upgrade|flight|visa|road trip|renting a car|at the train|cancelled flight|passport|talking to a travel agent|directions/i,
+    '出国场景':        /airport|hotel upgrade|cancelled flight|applying for a visa|at the train station|talking to a travel agent|renting a car/i,
+    '扩大生命边界':    /adventure sports|road trip|going to the beach|skiing|roller coaster|f1 racing/i,
+    '深圳自然':        /beach|gardening|adventure sports/i,
+    '国外风景与美食':  /head chef|mexican food|indian food|thai food|at the deli|bakery|stir fry|butcher/i,
+    '工作商务':        /the office|boss|deadline|assistant|receptionist|presentation|meeting|closing the deal|driving sales|purchasing manager|business plan|budget|fundraiser/i,
+    '外贸客户开发实景': /closing the deal|driving sales|difficult customer|purchasing manager|sending a quote|marketing plan/i,
+    '报价谈判与交期':  /sending a quote|closing the deal|purchasing manager|deadline|numbers|comparisons|forex|stock market/i,
+    '展会与客户接待':  /presentation series|difficult customer|making an appointment|canceling an appointment|small talk|receptionist/i,
+    '创业与事业':      /business plan|investing|emerging markets|loan|fundraiser|you are fired|asking for a raise|job hunting|i.m in debt/i,
+    '职业规划':        /job interview|interview skills|asking for a raise|job hunting|first paycheck|you are fired|what do you do|asking for time off|i need more time/i,
+    '个人成长':        /new year resolution|fresh start|cheer up|try to sleep|planning for the worst/i,
+    '认知提升的重要性': /simple math|physics|darwin|big bang|learning the piano/i,
+    '科技与AI':        /tech support|buying a computer|computer games|mobile phone|internet service|virus|online shopping/i,
+    '购物休闲':        /buying|shopping|bargain|shoes|jeans|suit|jewel|makeup|refund|returning a product|online shopping|new furniture/i,
+    '点餐美食':        /restaurant|menu|head chef|deli|bakery|breakfast|dinner|lunch|pizza|sandwich|stir fry|vegetarian|butcher|kitchen|thanksgiving/i,
+    '情感共情':        /i.m sorry|cheer up|homesick|breaking up|bad news|apology|feel so good|foul/i,
+    '日常生活场景':    /cleaning the house|doing laundry|morning routine|making breakfast|cooking|moving|heating|tools|new furniture|pest control|handyman|dr. plumber/i,
+    '阅读与电影':      /movie review|movie trailer|book store|reading/i,
+    '旅行对人的意义':  /road trip|adventure sports|going to the beach|travel agent|skiing|directions/i
+  };
   /* englishpod_dialogues.js 有 4.6MB，只有真实对白增益明显（约 +20 条以上）的话题才值得
      为它触发下载；其余话题（瑜伽 +7、牙科 +3 这种）只在源恰好已加载时才受益，不主动拉。 */
   var REAL_PRELOAD = {
@@ -2358,7 +2403,7 @@ ssRestoreView();
   };
   /* 源文件 → 可贡献的标签（选中/自动命中这些标签时加载对应源，加载后索引归并） */
   var CROSS_SRC = [
-    { file:'./englishpod_dialogues.js', topics:['通用日常','旅行出差','点餐美食','工作商务','健康养生','日常闲聊','情感共情','购物休闲','家庭孩子'] },
+    { file:'./englishpod_clean.js', topics:['通用日常','旅行出差','点餐美食','工作商务','健康养生','日常闲聊','情感共情','购物休闲','家庭孩子'] },
     { file:'./familyalbum_dialogues.js', topics:['日常闲聊','家庭孩子','点餐美食','情感共情','健康养生','职业规划','工作商务','个人成长','人生价值观探讨','日常生活场景'] },
     { file:'./sitcom_dialogues.js', topics:['日常闲聊','情感共情','点餐美食','家庭孩子','工作商务','健康养生','购物休闲'] },
     { file:'./earnings_dialogues.js', topics: EARN_TOPICS },
@@ -2601,7 +2646,9 @@ ssRestoreView();
       if(m && m.src && REAL_PRELOAD[t]) m.src.forEach(function(x){ if(scan.indexOf(x) < 0) scan.push(x); });
     });
     scan.forEach(function(t){
-      if(needEP(t)) wantSrc['./englishpod_dialogues.js'] = 1;
+      /* 场景 chip（剧集播放）仍然需要 4.6MB 的完整文本；话题级只需要 195KB 的纯对白 */
+      if(needEP(t)){ wantSrc['./englishpod_dialogues.js'] = 1; wantSrc['./englishpod_clean.js'] = 1; }
+      else if(EPC_FINE[t] || REAL_SRC_MAP[t] || LIFE_TOPICS.indexOf(t) >= 0) wantSrc['./englishpod_clean.js'] = 1;
       if(needFA(t)) wantSrc['./familyalbum_dialogues.js'] = 1;
       var r = DIALOGUE_REG[t];
       if(r) wantSrc[r.file] = 1;
@@ -2616,16 +2663,17 @@ ssRestoreView();
   function pushIndex(topic, family, label, items){
     /* 配额说明：原来「每来源族 ≤10 条 / 每话题 ≤80 条」把 2,700 多句真实对白
        硬砍成 90 条在用（每个大类永远只看得到同样 10 句），而且前 5 集的 40 条
-       就把配额吃满，Going To The Gym 这类靠后的集根本进不来。现在放开到
-       每族 300 / 每话题 1500（全量只有 2,700 条，内存无压力），并按句子去重。 */
+       就把配额吃满，Going To The Gym 这类靠后的集根本进不来。
+       现在：每族 2,000 / 每话题 2,500，实际就是全量入池（docx 版总共只有 2,532 句），
+       并按句子文本去重——池子深了，LRU 轮转才有意义。 */
     var entry = _crossIndex[topic];
     if(!entry){ entry = _crossIndex[topic] = { list: [], fam: {}, seen: {} }; }
     if(!entry.seen){ entry.seen = {}; entry.list.forEach(function(x){ entry.seen[x.en] = 1; }); }
     (items || []).forEach(function(it){
       if(!it || !it.en) return;
       if(entry.seen[it.en]) return;                /* 同一句不重复入池 */
-      if(entry.fam[family] >= 300) return;         /* 每来源族每话题 ≤300 条 */
-      if(entry.list.length >= 1500) return;        /* 每话题 ≤1500 条 */
+      if(entry.fam[family] >= 2000) return;
+      if(entry.list.length >= 2500) return;
       entry.fam[family] = (entry.fam[family] || 0) + 1;
       entry.seen[it.en] = 1;
       entry.list.push({ family: family, label: label, en: it.en, cn: it.cn || '' });
@@ -2677,7 +2725,29 @@ ssRestoreView();
   function buildTopicIndex(){
     var SC = window.ENGLISHPOD_SCENES || [];
     var EP_DLG = window.ENGLISHPOD_DIALOGUES;
-    if(EP_DLG && !_crossBuilt.ep){
+    /* ① 优先用 docx 版纯对白：2,532 句干净对话，先按场景粗投，再按集名精确投 */
+    var EPC = window.ENGLISHPOD_CLEAN;
+    if(EPC && EPC.episodes && !_crossBuilt.epc){
+      _crossBuilt.epc = 1;
+      var eps = EPC.episodes.slice();
+      for(var q = eps.length - 1; q > 0; q--){          /* 打散，避免永远是最前面几集被抽 */
+        var r = Math.floor(Math.random() * (q + 1)), tmp = eps[q]; eps[q] = eps[r]; eps[r] = tmp;
+      }
+      eps.forEach(function(ep){
+        var tp = EPC_SCENE_TOPIC[ep.s] || '日常闲聊';
+        var items = ep.l.map(function(x){ return { en: x, cn: '' }; });
+        var label = 'EnglishPod·' + ep.t;
+        pushIndex(tp, 'EnglishPod', label, items);
+        /* 集名命中哪个话题就往哪投：family 用集号，这样 crossLines 的来源轮转
+           不会因为「只有一个 EnglishPod 大族」而总是同一批句子 */
+        Object.keys(EPC_FINE).forEach(function(topic){
+          if(topic === tp) return;
+          if(!EPC_FINE[topic].test(ep.t)) return;
+          pushIndex(topic, 'EP:' + ep.c, label, items);
+        });
+      });
+    }
+    if(EP_DLG && !EPC && !_crossBuilt.ep){
       _crossBuilt.ep = 1;
       SC.forEach(function(sc){
         var key = ('00' + sc.n).slice(-3), ep = EP_DLG[key];
@@ -2773,26 +2843,42 @@ ssRestoreView();
     }
     return _crossIndex;
   }
-  /* 把某话题的跨源候选句注入 target（调用方传入）：按来源族轮转抽样，最多 5 条，保证跨源多样性 */
+  /* 把某话题的跨源候选句注入 target（调用方传入）：最多 5 条，按来源族轮转，保证跨源多样性。
+     抽选规则和话题句一致——**先抽没注入过的，抽空了才用旧的**（共用 _injSeq 账本）。
+     之前的写法是「随机抽 5 条、再按新旧排序」，顺序对了但候选还是随机来的，
+     所以池子再深也会连着两轮抽到同一句（实测 6 轮重复 30%）。 */
   function crossLines(t, target){
     var entry = _crossIndex[t];
     if(!entry || !entry.list.length) return;
-    var groups = {};
-    entry.list.forEach(function(it){ (groups[it.family] = groups[it.family] || []).push(it); });
-    Object.keys(groups).forEach(function(f){
-      var g = groups[f];
-      for(var i = g.length - 1; i > 0; i--){ var j = Math.floor(Math.random() * (i + 1)), tmp = g[i]; g[i] = g[j]; g[j] = tmp; }
+    function lineOf(it){ return '(' + it.label + ') "' + it.en + '"' + (it.cn ? ' — ' + it.cn : ''); }
+    var freshG = {}, usedG = {};
+    entry.list.forEach(function(it){
+      var bucket = _injSeq[wordKey(lineOf(it))] ? usedG : freshG;
+      (bucket[it.family] = bucket[it.family] || []).push(it);
     });
-    var fams = Object.keys(groups), got = 0, out = [];
-    while(got < 5){
-      var any = false;
-      fams.forEach(function(f){
-        var g = groups[f];
-        if(g.length){ out.push(g.pop()); got++; any = true; }
+    [freshG, usedG].forEach(function(grp){
+      Object.keys(grp).forEach(function(f){
+        var g = grp[f];
+        for(var i = g.length - 1; i > 0; i--){ var j = Math.floor(Math.random() * (i + 1)), tmp = g[i]; g[i] = g[j]; g[j] = tmp; }
       });
-      if(!any) break;
-    }
-    out.forEach(function(it){ target.push('(' + it.label + ') "' + it.en + '"' + (it.cn ? ' — ' + it.cn : '')); });
+    });
+    var out = [];
+    /* 池子薄的话少拿几条：牙科只有 11 句真实对白，一轮拿 5 条等于两轮转一圈，
+       所以按池子深度收缩配额，把名额让给话题句（它们有 70 多条）。 */
+    var maxN = entry.list.length >= 40 ? 5 : (entry.list.length >= 16 ? 3 : 2);
+    [freshG, usedG].forEach(function(grp){
+      var fams = Object.keys(grp), got = 0;
+      while(out.length < maxN && got < maxN){
+        var any = false;
+        for(var fi = 0; fi < fams.length && out.length < maxN; fi++){
+          var g = grp[fams[fi]];
+          if(g.length){ out.push(g.pop()); any = true; }
+        }
+        if(!any) break;
+        got++;
+      }
+    });
+    out.forEach(function(it){ target.push(lineOf(it)); });
   }
 
   function resolveTopics(tags){
@@ -2895,6 +2981,27 @@ ssRestoreView();
     }
     function useScene(sc){
       var key = ('00' + sc.n).slice(-3);
+      /* 先按集名在 docx 版纯对白里找（干净、无主持人讲解），找不到才回退到 PDF 版 */
+      var clean = null, EPC = window.ENGLISHPOD_CLEAN;
+      if(EPC && EPC.episodes){
+        var want = String(sc.en || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        for(var ci = 0; ci < EPC.episodes.length; ci++){
+          var e2 = EPC.episodes[ci];
+          if(String(e2.t).toLowerCase().replace(/[^a-z0-9]/g, '') === want){ clean = e2; break; }
+        }
+      }
+      if(clean && clean.l.length){
+        var pool = clean.l.slice();
+        for(var pi = pool.length - 1; pi > 0; pi--){
+          var pj = Math.floor(Math.random() * (pi + 1)), pt = pool[pi]; pool[pi] = pool[pj]; pool[pj] = pt;
+        }
+        pool.slice(0, 6).forEach(function(t){
+          priority.push('(EnglishPod·' + clean.t + ') "' + t + '"');
+        });
+        if(!tip) tip = { en: pool[0], cn: '' };
+        useData(sc.topic || '通用日常');
+        return;
+      }
       var ep = EP_DLG && EP_DLG[key];
       if(ep && ep.text){
         var seen = {}, got = [];
@@ -2968,6 +3075,7 @@ ssRestoreView();
        池子大时全程不重样；池子小时均匀轮转重现，间隔重复比集中重复更利于记忆 */
     var seenL = {}, chosenLines = [], turn = ++_injTurn;
     priority.forEach(function(l){
+      if(chosenLines.length >= 8) return;      /* 真实对白优先，但一轮最多 8 条，不再溢出 */
       if(seenL[l]) return; seenL[l] = 1;
       if(learnIdx[wordKey(l)]) return;
       chosenLines.push(l); _injSeq[wordKey(l)] = turn;
@@ -3689,8 +3797,10 @@ ssRestoreView();
     var aiBody = coachAppend('ai', '…', 'c-stream');
     if(micOn) stopListening();          // 已收到用户这句，先关麦，避免录到 AI 的声音
     var autoPick = state.auto ? coachPickTopics(text) : null;
-    // 对白语料后台加载，不阻塞 AI 请求
-    ensureDialogue(autoPick ? state.topics.concat(autoPick) : state.topics.slice());
+    /* 对白语料：clean 版只有 195KB、又走 SW 缓存，所以等它一下（最多 1.2s，
+       保证第一句就带真实对白；旧版 4.6MB 从不等待，第一轮总是没语料） */
+    var dl = ensureDialogue(autoPick ? state.topics.concat(autoPick) : state.topics.slice());
+    try{ await Promise.race([dl, new Promise(function(r){ setTimeout(r, 1200); })]); }catch(e){}
     updateDialogueStatus();
     // 话题语料 corpus_topic.js 按需加载（进入语伴时不预拉，避免一进来就卡）
     if(!window.CORPUS){ try{ await ensureCorpus(1600); }catch(e){} }

@@ -6,8 +6,8 @@
    升级方式：改 CACHE 版本号即可清掉旧缓存。
    注意：words.json 走的是 stale-while-revalidate，改了词库文件必须同时把 CACHE 版本号 +1，
         否则用户第一次打开拿到的还是旧词库（要第二次打开才更新）。 */
-var CACHE = 'qingxue-v23';
-var PRECACHE = ['./', './index.html', './words.json', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png', './englishpod_clean.js', './biz_books.js'];
+var CACHE = 'qingxue-v24';
+var PRECACHE = ['./', './index.html', './words.json', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png', './englishpod_clean.js', './biz_books.js?v=2'];
 
 self.addEventListener('install', function(e){
   e.waitUntil(

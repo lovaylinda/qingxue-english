@@ -744,70 +744,6 @@ function speak(text){
   window.speechSynthesis.speak(u);
 }
 
-/* ================= 阅读朗读（商务 / 手册） =================
- * 音色固定 athena（微软 en-US-JennyNeural）——经字节级比对确认，与 APEC 手册预生成
- * mp3 是同一个声音。走 worker 的 /edge 合成（Edge 音色手机浏览器直连会被 403），
- * 结果存进语伴同一个持久缓存（Cache Storage 'tts-v1'，key 格式一致可互通），
- * 同一句话第二次朗读零等待、零额度。合成失败退回手机自带朗读。 */
-var READ_VOICE = 'athena';
-var readAudioUrls = {};               /* text -> blobURL，让「再点一次=停止」和重复朗读复用 */
-var readPlayingText = '';             /* 当前正在朗读的句子（用于再点停止） */
-var readToken = 0;                    /* 朗读请求令牌：换句后旧请求作废 */
-function readCacheUrl(text){ return 'https://tts-cache.local/' + encodeURIComponent(READ_VOICE + '|' + text); }
-function readCachePut(text, blob){
-  if(!window.caches || !caches.open) return;
-  caches.open('tts-v1').then(function(c){
-    return c.put(readCacheUrl(text), new Response(blob, { headers: { 'Content-Type': 'audio/mpeg' } }));
-  }).then(function(){ return caches.open('tts-v1'); }).then(function(c){
-    return c.keys().then(function(keys){
-      var over = keys.length - 300;
-      for(var i=0;i<over;i++){ try{ c.delete(keys[i]); }catch(e){} }
-    });
-  }).catch(function(){});
-}
-function speakRead(text){
-  if(!text) return;
-  var conf = window.__TTS_BRIDGE;
-  if(!(conf && conf.url && conf.play && window.fetch)){ speak(text); return; }
-  /* 再点同句 = 停止 */
-  if(readPlayingText === text){ readPlayingText = ''; conf.stop(); return; }
-  readPlayingText = text;
-  var myToken = ++readToken;                 /* 换句后旧请求作废，防止旧音晚到抢播 */
-  if(readAudioUrls[text]){
-    conf.play(readAudioUrls[text]);
-    return;
-  }
-  /* 第一时间出声：系统朗读必须在点击手势内【同步】调用，异步调 iOS 会静音拦截。
-     云端好声音在后台取，到了之后若系统还在念就无缝切换，念完了就只入缓存。 */
-  speak(text);
-  var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-  var timer = ctrl ? setTimeout(function(){ try{ ctrl.abort(); }catch(e){} }, 12000) : null;
-  fetch(conf.url + '/edge', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-App-Key': conf.key },
-    body: JSON.stringify({ text: text, voice: READ_VOICE }),
-    signal: ctrl ? ctrl.signal : undefined
-  }).then(function(res){
-    if(!res.ok) throw new Error('HTTP ' + res.status);
-    return res.blob();
-  }).then(function(b){
-    if(timer) clearTimeout(timer);
-    if(!b || !b.size || (b.type && b.type.indexOf('audio') === -1)) throw new Error('不是音频');
-    readCachePut(text, b);
-    var url = URL.createObjectURL(b);
-    readAudioUrls[text] = url;
-    if(readToken !== myToken) return;
-    var upgrading = false;
-    try{ upgrading = window.speechSynthesis && window.speechSynthesis.speaking; }catch(e){}
-    if(upgrading){ conf.stop(); conf.play(url); }   /* 无缝升级成手册同款好声音 */
-  }).catch(function(){
-    if(timer) clearTimeout(timer);
-    if(readToken !== myToken || readCloudWarned) return;
-    readCloudWarned = true;
-    toast('云端好声音暂时连不上，先用手机朗读；网络恢复后点同一句会自动升级音色');
-  });
-}
-
 /* 全局声音管理：同一时刻只播一个（mp3 或系统朗读），再点同句=停止 */
 var curAud = null;
 var curAudUrl = null;
@@ -1767,8 +1703,7 @@ function render(){
   parseHash();
   ssSaveHash(location.hash);
   stopSound(); // 切换视图时停止正在播放的声音
-  readPlayingText = ''; readToken++;          /* 商务云端朗读一并停掉 */
-  if(window.__TTS_BRIDGE && window.__TTS_BRIDGE.stop){ try{ window.__TTS_BRIDGE.stop(); }catch(e){} }
+  if(window.__TTS_STOP){ try{ window.__TTS_STOP(); }catch(e){} }   /* 语伴的云端语音一并停掉 */
   window.onscroll = null;
   var homeTarget = null;
   if(route.view !== 'review') revKey = null;
@@ -2421,14 +2356,8 @@ ssRestoreView();
      换 key 时两处要同步改，且 worker 需要重新部署。 */
   var APP_KEY = 'qx-linda-7f3k9m';
   var configured = WORKER_URL.indexOf('你的') === -1;
-  /* 暴露给阅读朗读（speakRead）：商务板块与语伴共用这套语音服务。
-     play 用语伴那个已解锁的持久 <audio> 元素播放（iOS 上 new Audio() 异步播放
-     会被拦导致无声，这是真机踩过的坑），stop 用来「再点一次=停止」。 */
-  window.__TTS_BRIDGE = {
-    url: WORKER_URL, key: APP_KEY,
-    play: function(url, onDone){ try{ playTtsUrl(url, onDone, 1, true); }catch(e){ if(onDone) onDone(); } },
-    stop: function(){ try{ stopCurrentTTS(); }catch(e){} }
-  };
+  /* 暴露给 render()：切走语伴页面时停掉正在播的云端语音、关掉麦克风 */
+  window.__TTS_STOP = function(){ try{ stopCurrentTTS(); stopListening(); }catch(e){} };
 
   var COMPANIONS = window.COMPANIONS || {};
   var SCENES = window.ENGLISHPOD_SCENES || [];
@@ -3294,17 +3223,18 @@ ssRestoreView();
        'from,what,when,where,how,this,that,with,about,please,thank,thanks,hello,there,here,' +
        'more,very,much,many,just,now,some,them,they,their,not,but,all,any,get,got,too,also,can').split(',').forEach(function(w){ BIZ_STOP[w] = 1; });
       var msgEn = ((userMsg || '').toLowerCase().match(/[a-z]{4,}/g) || []).filter(function(w){ return !BIZ_STOP[w]; });
-      var BIZ_CN = /报价|价格|交期|交货|发货|订单|催|货款|发票|样品|会议|改期|面试|道歉|邮件|电话|客户|工厂|谈判|投诉|下单|合同|出口/;
-      var cnHit = BIZ_CN.test(userMsg || '');
+      var BIZ_CN = /报价|价格|交期|交货|发货|订单|催|货款|发票|样品|会议|改期|面试|道歉|邮件|电话|客户|工厂|谈判|投诉|下单|合同|出口|装箱|单据|付款/;
+      var cnWords = (userMsg || '').match(/报价|价格|交期|交货|发货|订单|催|货款|发票|样品|会议|改期|面试|道歉|邮件|电话|客户|工厂|谈判|投诉|下单|合同|出口|装箱|单据|付款/g) || [];
+      var cnHit = cnWords.length > 0;
       if(bizOn || cnHit){
         var bizScored = [], bizOther = [];
         window.BIZ_CORPUS.forEach(function(o){
           var blob = (o.en + ' ' + o.cn + ' ' + o.tag).toLowerCase();
           var sc = 0;
           for(var bi = 0; bi < msgEn.length; bi++){ if(blob.indexOf(msgEn[bi]) >= 0) sc++; }
-          if(!sc && cnHit){
-            sc = BIZ_CN.test(o.en + ' ' + o.cn + ' ' + o.tag) ? 1 : 0;
-          }
+          /* 中文按「具体命中了哪个词」计分：说"发票"就优先带发票表达，
+             其他商务条目只在没凑满 3 条时随机补 */
+          for(var ci = 0; ci < cnWords.length; ci++){ if(blob.indexOf(cnWords[ci]) >= 0) sc++; }
           if(sc) bizScored.push({ o: o, k: sc + Math.random() });  /* 得分为主，同分随机 */
           else bizOther.push(o);
         });
@@ -3614,19 +3544,14 @@ ssRestoreView();
     ttsWarned = true;
     toast(msg || '云端语音没响应，已改用手机自带朗读（音色会不跟随设置）');
   }
-  /* 备用语音冷却：Cloudflare 没额度时，没必要每句话都先去撞一次 429 白等 200ms */
+  /* 备用语音冷却：Cloudflare 没额度时，没必要每句话都先去撞一次 429 白等 */
   var ttsCloudCool = 0, ttsFailReason = '';
-  /* 语音引擎优先级：auto = 竞速一次定终身 / edge = 优先微软 Edge / cloud = 优先 Cloudflare */
-  var ttsEnginePref = 'auto';
-  try{ ttsEnginePref = localStorage.getItem('coach_tts_engine') || 'auto'; }catch(e){}
-  /* 上次谁赢（跨对话记住）：auto 模式下直接沿用，不再每段回复都白跑一路请求。
-     空字符串＝还没比过，第一次用的时候比一次。 */
-  var lastGoodEngine = '';
-  try{ lastGoodEngine = localStorage.getItem('coach_tts_last') || ''; }catch(e){}
-  /* 一级：Cloudflare Deepgram（发音干净、延迟低、有免费额度） */
-  function cloudTts(spoken, voice, stillWanted, extCtrl){
+  /* Cloudflare Deepgram 语音（唯一云端引擎）。
+     曾经还有一路微软 Edge 引擎和它竞速：真机上从来没出过声（worker 转发被
+     微软 403 + iOS 拦异步音频），每句白等最多 12 秒还拖慢出声，已整体删除。 */
+  function cloudTts(spoken, voice, stillWanted){
     if(stillWanted && !stillWanted()) return Promise.resolve(null);
-    var ctrl = extCtrl || ((typeof AbortController !== 'undefined') ? new AbortController() : null);
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
     var timer = ctrl ? setTimeout(function(){ try{ ctrl.abort(); }catch(e){} }, 8000) : null;
     return fetch(WORKER_URL + '/tts', {
       method: 'POST',
@@ -3652,41 +3577,10 @@ ssRestoreView();
       return blob;
     }).catch(function(err){
       if(timer) clearTimeout(timer);
-      /* 竞速时被对手掐掉不算故障，别去污染失败原因 */
-      if(err && err.name === 'AbortError'){ if(!(ctrl && ctrl._race)) ttsFailReason = 'slow'; return null; }
+      if(err && err.name === 'AbortError'){ ttsFailReason = 'slow'; return null; }
       if(err && err.status === 429){ ttsCloudCool = Date.now() + 10 * 60000; ttsFailReason = 'quota'; }
       else if(err && err.status === 401){ ttsCloudCool = Date.now() + 10 * 60000; ttsFailReason = 'key'; }
       else { ttsCloudCool = Date.now() + 60000; ttsFailReason = 'net'; }
-      return null;
-    });
-  }
-  /* 二级：Edge 朗读（微软神经网络音色）。走 worker 转发——微软按 UA 卡人，
-     手机浏览器的 UA 会被 403，而网页里的 JS 改不了自己的 UA，只能让 worker 代跑。 */
-  var edgeLastErr = '';
-  function edgeTts(spoken, voice, extCtrl){
-    if(!(configured && window.fetch)) return Promise.resolve(null);
-    var ctrl = extCtrl || ((typeof AbortController !== 'undefined') ? new AbortController() : null);
-    var timer = ctrl ? setTimeout(function(){ try{ ctrl.abort(); }catch(e){} }, 12000) : null;
-    return fetch(WORKER_URL + '/edge', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-App-Key': APP_KEY },
-      body: JSON.stringify({ text: spoken, voice: voice }),
-      signal: ctrl ? ctrl.signal : undefined
-    }).then(function(res){
-      if(!res.ok){
-        return res.text().then(function(t){
-          var e = new Error('HTTP ' + res.status + ' ' + String(t || '').slice(0, 70));
-          e.status = res.status; throw e;
-        }, function(){ var e = new Error('HTTP ' + res.status); e.status = res.status; throw e; });
-      }
-      return res.blob();
-    }).then(function(blob){
-      if(timer) clearTimeout(timer);
-      if(!blob || !blob.size || (blob.type && blob.type.indexOf('audio') === -1)) throw new Error('不是音频（' + (blob && blob.type) + '）');
-      return blob;
-    }).catch(function(err){
-      if(timer) clearTimeout(timer);
-      if(!(ctrl && ctrl._race) || !(err && err.name === 'AbortError')) edgeLastErr = (err && err.message) || 'unknown';
       return null;
     });
   }
@@ -3694,71 +3588,25 @@ ssRestoreView();
     ttsWarned = false;
     var url = URL.createObjectURL(blob);
     cachePut(key, url);
-    /* 两种音色的音频都存进持久缓存：同一句话以后不管走哪一级都直接复用 */
+    /* 音频存进持久缓存：同一句话以后直接复用，零等待零额度 */
     cachePutPersistent(key, blob);
     return url;
   }
   function noteFailByReason(){
-    if(ttsFailReason === 'quota') noteTtsFail('今日免费语音额度用完了，备用语音也没连上，先用手机自带朗读顶一下');
+    if(ttsFailReason === 'quota') noteTtsFail('今日 Cloudflare 语音免费额度用完了，先用手机自带朗读，明天自动恢复');
     else if(ttsFailReason === 'key') noteTtsFail('语音接口口令不对（worker 的 APP_KEY 和网页不一致）');
     else noteTtsFail('');
   }
-  /* 竞速：两级同时发第一句，谁先回来这一段就用谁，另一个立刻掐掉。
-     好处是「接话速度」永远等于两者里更快的那个——不会因为想听 Edge 的音色，
-     就让每段回复开头都多等一两秒。 */
-  function ttsFirst(spoken, voice){
-    if(!(configured && voice && window.fetch)) return Promise.resolve(null);
-    var hasAbort = (typeof AbortController !== 'undefined');
-    var cE = hasAbort ? new AbortController() : null;
-    var cC = hasAbort ? new AbortController() : null;
-    if(cE) cE._race = true;
-    if(cC) cC._race = true;
-    var edgeP = edgeTts(spoken, voice, cE);
-    /* 一级还在冷却期就别参与了，直接让 Edge 说话 */
-    var cloudP = (Date.now() < ttsCloudCool) ? Promise.resolve(null) : cloudTts(spoken, voice, null, cC);
-    return new Promise(function(resolve){
-      var settled = false, fails = 0;
-      function take(engine, blob){
-        if(settled) return;
-        settled = true;
-        try{ if(engine === 'edge'){ if(cC) cC.abort(); } else { if(cE) cE.abort(); } }catch(e){}
-        resolve({ engine: engine, blob: blob });
-      }
-      function fail(){
-        if(settled) return;
-        if(++fails >= 2){ settled = true; resolve(null); }
-      }
-      edgeP.then(function(b){ if(b) take('edge', b); else fail(); });
-      cloudP.then(function(b){ if(b) take('cloud', b); else fail(); });
-    });
-  }
-  /* 取一句话的音频：内存缓存 → 持久缓存 → 指定引擎（或竞速）。都取不到返回 null（交给手机朗读） */
-  function ttsFetchOne(spoken, voice, stillWanted, engine){
+  /* 取一句话的音频：内存缓存 → 持久缓存 → Cloudflare。都取不到返回 null（交给手机朗读） */
+  function ttsFetchOne(spoken, voice, stillWanted){
     var key = voice + '|' + spoken;
-    if(ttsCache[key]) return Promise.resolve({ url: ttsCache[key], engine: null });
+    if(ttsCache[key]) return Promise.resolve({ url: ttsCache[key] });
     if(!(configured && voice && window.fetch)) return Promise.resolve(null);
     function remote(){
       if(stillWanted && !stillWanted()) return Promise.resolve(null);
-      var got;
-      if(engine === 'edge'){
-        got = edgeTts(spoken, voice).then(function(b){ return b ? { blob: b, engine: 'edge' } : null; });
-      } else if(engine === 'cloud'){
-        got = cloudTts(spoken, voice, stillWanted).then(function(b){ return b ? { blob: b, engine: 'cloud' } : null; });
-      } else {
-        got = ttsFirst(spoken, voice);
-      }
-      return got.then(function(r){
-        if(r) return { url: ttsSuccess(r.blob, key), engine: r.engine };
-        /* 锁定的那一级这一句没声音了：临时借另一级顶上（音色会变一句，但总比哑巴好） */
-        var other = (engine === 'edge') ? 'cloud' : (engine === 'cloud' ? 'edge' : null);
-        if(other){
-          var alt = (other === 'edge') ? edgeTts(spoken, voice) : cloudTts(spoken, voice, stillWanted);
-          return alt.then(function(b){
-            if(b) return { url: ttsSuccess(b, key), engine: other };
-            noteFailByReason();
-            return null;
-          });
-        }
+      if(Date.now() < ttsCloudCool){ noteFailByReason(); return Promise.resolve(null); }  /* 冷却期别白撞 */
+      return cloudTts(spoken, voice, stillWanted).then(function(b){
+        if(b) return { url: ttsSuccess(b, key) };
         noteFailByReason();
         return null;
       });
@@ -3769,7 +3617,7 @@ ssRestoreView();
       cacheGetPersistent(key),
       new Promise(function(_, rej){ setTimeout(function(){ rej(new Error('cache-timeout')); }, 700); })
     ]).then(function(blob){
-      return { url: URL.createObjectURL(blob), engine: null };
+      return { url: URL.createObjectURL(blob) };
     }).catch(remote);
   }
 
@@ -3791,37 +3639,18 @@ ssRestoreView();
     var finished = false;
     function finish(){ if(finished) return; finished = true; if(onDone) onDone(); }
     function alive(){ return my === speakToken && !finished; }
-    var gotUrl = {}, pending = {}, lockP = null;
-    /* 整段回复锁定一个引擎，第一句谁先回来就定谁，后面几句跟着走；
-       「上次谁赢」会记住，下一次直接沿用——不然每段回复都白跑一路请求。
-       规则：上次成功的优先（能用的那个），没有记录才用你手动选的偏好。 */
-    var EngineLock = lastGoodEngine || ((ttsEnginePref === 'auto') ? null : ttsEnginePref);
-    function lockTo(e){
-      if(!e) return;
-      if(lastGoodEngine !== e){
-        lastGoodEngine = e;
-        try{ localStorage.setItem('coach_tts_last', e); }catch(err){}
-      }
-      EngineLock = e;
-    }
+    var gotUrl = {}, pending = {};
     /* 只提前取一句：等待时间够短，又不会为了抢时间把额度一次打光 */
     function prep(i){
       if(i >= parts.length) return null;
       if(gotUrl[i] !== undefined) return Promise.resolve(gotUrl[i]);
       if(pending[i]) return pending[i];
-      /* 后续句子等第一句定完引擎再发，避免两条路同时跑、音色打架 */
-      var start = (i === 0) ? Promise.resolve() : (lockP || Promise.resolve());
-      pending[i] = start.then(function(){
-        return ttsFetchOne(parts[i], voice, alive, EngineLock);
+      pending[i] = Promise.resolve().then(function(){
+        return ttsFetchOne(parts[i], voice, alive);
       }).then(function(r){
-        var url = r ? r.url : null;
-        if(r && r.engine) lockTo(r.engine);
-        /* 第一句直接命中缓存（没引擎信息）：沿用上次成功的那一级，没有就默认 Cloudflare */
-        if(i === 0 && !EngineLock) lockTo(lastGoodEngine || 'cloud');
-        gotUrl[i] = url;
-        return url;
+        gotUrl[i] = r ? r.url : null;
+        return gotUrl[i];
       });
-      if(i === 0) lockP = pending[0];
       return pending[i];
     }
     var pos = 0;
@@ -4505,31 +4334,10 @@ ssRestoreView();
     function refresh(){
       panel.querySelector('.vp-items').innerHTML = renderItems();
     }
-    /* 引擎选择行：自动＝第一句竞速，谁快整段用谁；也可以手动钉死一个 */
-    function engineRow(){
-      var opts = [
-        { id: 'auto', name: '⚡ 自动' },
-        { id: 'edge', name: '🎧 优先 Edge' },
-        { id: 'cloud', name: '☁️ 优先 Cloudflare' }
-      ];
-      var h = '<div class="rel-engine" style="margin-top:12px;">'
-        + '<div style="font-size:13px;opacity:.72;margin-bottom:6px;">语音用哪个引擎</div>'
-        + '<div style="display:flex;gap:6px;">';
-      opts.forEach(function(o){
-        var on = (ttsEnginePref === o.id);
-        h += '<button class="cbtn cbtn-ghost" data-engine="' + o.id + '" style="flex:1;font-size:12px;padding:6px 4px;'
-          + (on ? 'background:#4f46e5;color:#fff;border-color:#4f46e5;' : '') + '">' + o.name + '</button>';
-      });
-      h += '</div><p class="rel-hint" style="margin-top:6px;">'
-        + '自动＝每段回复的第一句让两边同时跑，谁先回来整段就用谁：接话速度不会变慢，Edge 命中缓存时还省 Cloudflare 额度。'
-        + '觉得 Edge 更好听可以选「优先 Edge」，代价是每段开头多等 1–2 秒。</p></div>';
-      return h;
-    }
     panel.innerHTML = '<div class="rel-panel" style="max-width:380px;">'
       + '<div class="rel-head"><strong>🎙️ 给「' + esc(c.name) + '」选个声音</strong><button class="cbtn cbtn-ghost" id="vpClose">✕</button></div>'
-      + '<p class="rel-hint">先点选你喜欢的音色，再点底部保存按钮。若换了音色听起来还是同一个人，说明云端语音没连上（走的是手机自带朗读），会在聊天里提示一次。</p>'
+      + '<p class="rel-hint">先点选你喜欢的音色，再点底部保存按钮。云端语音走 Cloudflare（自动存缓存，同一句话不重复扣额度）；若提示音色没变，说明云端没连上、走的是手机自带朗读，会在聊天里提示一次。</p>'
       + '<div class="vp-items">' + renderItems() + '</div>'
-      + engineRow()
       + '<div style="margin-top:12px;text-align:center;">'
       + '<button class="cbtn" id="vpSave" style="background:#4f46e5;color:#fff;padding:8px 24px;border-radius:8px;">✅ 保存并试听</button>'
       + '<button class="cbtn cbtn-ghost" id="vpCheck" style="margin-left:8px;padding:8px 14px;">🔍 检测语音</button>'
@@ -4538,19 +4346,6 @@ ssRestoreView();
     document.body.appendChild(panel);
     document.getElementById('vpClose').addEventListener('click', function(){ panel.remove(); });
     panel.addEventListener('click', function(e){
-      var eb = e.target.closest ? e.target.closest('[data-engine]') : null;
-      if(eb){
-        ttsEnginePref = eb.getAttribute('data-engine');
-        try{ localStorage.setItem('coach_tts_engine', ttsEnginePref); }catch(err){}
-        /* 手动选了就重新开始比：清掉「上次谁赢」的记录，否则会被旧记忆盖住 */
-        lastGoodEngine = '';
-        try{ localStorage.removeItem('coach_tts_last'); }catch(err){}
-        panel.querySelector('.rel-engine').outerHTML = engineRow();
-        toast(ttsEnginePref === 'edge' ? '之后都用微软 Edge 的声音（更好听，但开头会慢一点）'
-            : ttsEnginePref === 'cloud' ? '之后都用 Cloudflare 的声音（接话最快）'
-            : '已切回自动：谁能先出声就用谁');
-        return;
-      }
       var b = e.target.closest ? e.target.closest('[data-voice-id]') : null;
       if(b){
         pickedId = b.getAttribute('data-voice-id');
@@ -4564,22 +4359,15 @@ ssRestoreView();
       panel.remove();
       coachSpeak('Hey! This is how I sound now.', function(){});
     });
-    /* 语音体检：两级分别测一次，把延迟也报出来——谁快谁慢，你自己看得到 */
+    /* 语音体检：测一次云端，把延迟报出来 */
     document.getElementById('vpCheck').addEventListener('click', function(){
       if(!(configured && window.fetch)){ toast('还没配置 worker 地址，只能用手机自带朗读'); return; }
-      toast('正在分别检测两级语音…');
+      toast('正在检测云端语音…');
       var probe = 'Okay, testing one two three.';
       var t1 = Date.now();
       cloudTts(probe, pickedId, null).then(function(cb){
-        var cms = Date.now() - t1;
-        var t2 = Date.now();
-        return edgeTts(probe, pickedId).then(function(eb){
-          var ems = Date.now() - t2;
-          var a = cb ? ('一级 CF ✅ ' + cms + 'ms') : '一级 CF ❌';
-          var b = eb ? ('二级 Edge ✅ ' + ems + 'ms') : '二级 Edge ⏭ 备用未启用（不影响使用）';
-          var tip = (cb && eb) ? ((cms <= ems ? '（CF 更快）' : '（Edge 更快）')) : '';
-          toast(a + ' ｜ ' + b + tip);
-        });
+        toast(cb ? ('云端语音 ✅ ' + (Date.now() - t1) + 'ms')
+                 : '云端语音 ❌（可能是今天额度用完或网络不通，会自动用手机朗读兜底）');
       });
     });
   }

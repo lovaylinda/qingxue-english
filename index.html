@@ -233,6 +233,7 @@ footer{
   position:relative;background:var(--surface);border:1px solid var(--hair);
   border-radius:var(--radius);padding:14px 16px;margin:10px 0;
   cursor:pointer;transition:border-color .15s,box-shadow .15s,background .15s;
+  -webkit-tap-highlight-color:transparent;   /* 点「朗读」时不再整句闪高亮 */
 }
 .biling.active{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
 .biling.done{background:#F3F6F5}
@@ -776,23 +777,50 @@ function speakRead(text){
     conf.play(readAudioUrls[text]);
     return;
   }
+  /* 网络不好时绝不让人干等：3.5 秒云端还没回来，先用系统朗读垫上；
+     云端结果继续在后台取，取到后若系统还在念，无缝换成手册同款好声音，
+     否则只存缓存（下次点同一句直接出好声音）。 */
+  var fallbackOn = false;
+  var fallbackTimer = setTimeout(function(){
+    if(readToken !== myToken) return;
+    fallbackOn = true;
+    speak(text);
+  }, 3500);
   var onCacheMiss = function(){
     if(readToken !== myToken) return;
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var timer = ctrl ? setTimeout(function(){ try{ ctrl.abort(); }catch(e){} }, 12000) : null;
     fetch(conf.url + '/edge', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-App-Key': conf.key },
-      body: JSON.stringify({ text: text, voice: READ_VOICE })
+      body: JSON.stringify({ text: text, voice: READ_VOICE }),
+      signal: ctrl ? ctrl.signal : undefined
     }).then(function(res){
       if(!res.ok) throw new Error('HTTP ' + res.status);
       return res.blob();
     }).then(function(b){
-      if(readToken !== myToken) return;
+      if(timer) clearTimeout(timer);
       if(!b || !b.size || (b.type && b.type.indexOf('audio') === -1)) throw new Error('不是音频');
       readCachePut(text, b);
       var url = URL.createObjectURL(b);
       readAudioUrls[text] = url;
-      conf.play(url);
-    }).catch(function(){ if(readToken === myToken) speak(text); });
+      if(readToken !== myToken) return;
+      if(fallbackOn){
+        /* 系统朗读还在念 → 停掉换成好声音；念完了 → 只入缓存，不打扰 */
+        var sysSpeaking = false;
+        try{ sysSpeaking = window.speechSynthesis && window.speechSynthesis.speaking; }catch(e){}
+        if(sysSpeaking){ conf.stop(); conf.play(url); }
+      } else {
+        clearTimeout(fallbackTimer);
+        conf.play(url);
+      }
+    }).catch(function(){
+      if(timer) clearTimeout(timer);
+      if(readToken !== myToken || fallbackOn) return;   /* 已经在念了，不用管 */
+      clearTimeout(fallbackTimer);
+      fallbackOn = true;
+      speak(text);
+    });
   };
   /* 缓存查询与 1.2s 计时器竞速：缓存再慢也不能拖住朗读 */
   var missFired = false;
@@ -806,7 +834,7 @@ function speakRead(text){
     if(b && b.size){
       var url = URL.createObjectURL(b);
       readAudioUrls[text] = url;
-      if(readToken === myToken) conf.play(url);
+      if(readToken === myToken){ clearTimeout(fallbackTimer); conf.play(url); }
     } else missOnce();
   }).catch(missOnce);
   setTimeout(missOnce, 1200);

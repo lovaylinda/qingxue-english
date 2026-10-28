@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0F766E">
+<!-- 朗读音源（百度朗读接口）只接受「不带 Referer」的请求；外站 Referer 会被它回一个空响应。
+     这一行让整页请求都不带 Referer，是朗读能出声的前提，别删。 -->
+<meta name="referrer" content="no-referrer">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
@@ -185,7 +188,6 @@ a,button{-webkit-tap-highlight-color:transparent;touch-action:manipulation}
 .btn-nav:hover{border-color:var(--accent)}
 .btn-mark{background:var(--accent);color:#fff}
 .btn-mark.off{background:var(--surface);border:1px solid var(--accent);color:var(--accent)}
-.controls .btn-voice{flex:0 0 auto;padding:0 12px;font-size:13px;color:var(--muted)}
 .hint{text-align:center;color:var(--faint);font-size:12px;margin-top:12px}
 
 /* ===== 播客列表 ===== */
@@ -802,8 +804,8 @@ try{
     window.speechSynthesis.addEventListener('voiceschanged', refreshEnVoice);
   }
 }catch(e){}
-/* 排查用：控制台执行 __voices() 可以看到这台手机有哪些英文音色（只作参考，
-   实际朗读用系统默认音色；商务朗读的音色用 __bizVoice() 切换） */
+/* 排查用：控制台执行 __voices() 可以看到这台手机有哪些英文音色
+   （只作参考——正常朗读走百度高清，不走系统音色；系统音色只在网络失败时兜底） */
 window.__voices = function(){
   refreshEnVoice();
   var out = [];
@@ -813,30 +815,53 @@ window.__voices = function(){
       out.push(voiceScore(v) + '  ·  ' + v.name + '  ·  ' + v.lang + '  ·  ' + (v.localService ? '本机' : '需联网'));
     });
   }catch(e){}
-  return { bestGuess: __enVoice ? __enVoice.name : '(无)', score: __enVoiceScore, bizVoice: bizVoiceMode(), english: out };
+  return { bestGuess: __enVoice ? __enVoice.name : '(无)', score: __enVoiceScore, male: (function(){ var m = pickMaleVoice(); return m ? m.name : '(无)'; })(), english: out };
 };
-/* 一键自检：在商务书里点朗读没声音时，控制台执行 __ttsDiag() 看卡在哪一步 */
+/* 一键自检：点朗读没声音时，控制台执行 __ttsDiag() 看卡在哪一步 */
 window.__ttsDiag = function(){
   return {
     ua: navigator.userAgent,
     android: /Android/i.test(navigator.userAgent || ''),
     speechSynthesis: 'speechSynthesis' in window,
     voices: (window.speechSynthesis ? (window.speechSynthesis.getVoices() || []).length : 0),
-    bizVoice: bizVoiceMode(),
-    webVoiceUrl: bizWebTtsUrl('Please confirm the delivery date.'),
-    worker: (window.__WORKER_CFG || {}).url || '(未配置)'
+    maleVoice: (function(){ var m = pickMaleVoice(); return m ? m.name : '(无)'; })(),
+    sayUrl: sayUrl('Please confirm the delivery date.'),
+    referrerPolicy: (document.querySelector('meta[name=referrer]') || {}).content || '(未设置)'
   };
 };
 
-/* 朗读：使用浏览器自带的语音合成（TTS），离线可用。onend 可选（读完 / 出错都会调）
-   —— 音色：默认交给系统（就是最早版本的听感，iPhone 与安卓都按各自默认音色念）。
-      这里不再强行指定 getVoices() 里的某一个：
-      ① 安卓上不少英文音色是「联网音色」（localService=false），指定之后一旦连不上
-         就会静音失败——不报错、也没声音；
-      ② 各家 ROM 的默认音色本来就不同，硬挑一个反而可能挑到更差的。
-      想排查本机有哪些音色，控制台执行 __voices()。
+/* ---- 系统朗读（只在网络音源失败时兜底）----
+   优先挑本机音色里的「男声」——只认 localService 不为 false 的音色，
+   因为安卓上「需联网」的英文音色一旦连不上就静默失败（不报错、也没声音）。 */
+function pickMaleVoice(){
+  try{
+    if(!('speechSynthesis' in window)) return null;
+    var list = window.speechSynthesis.getVoices() || [];
+    var best = null, bs = 0;
+    for(var i = 0; i < list.length; i++){
+      var v = list[i];
+      var lang = String(v.lang || '').toLowerCase().replace('_', '-');
+      if(lang.indexOf('en') !== 0) continue;
+      if(v.localService === false) continue;
+      var n = String(v.name || '') + ' ' + String(v.voiceURI || '');
+      if(/female|woman|samantha|karen|moira|tessa|victoria|susan|zira|aria|jenny|ava/i.test(n)) continue;
+      var s = 0;
+      if(/male\b|man\b|aaron|daniel|alex\b|fred|david|mark\b|george|guy|christopher|brian|eric|arthur|oliver/i.test(n)) s += 40;
+      if(/^en-gb/.test(lang)) s += 12;                  /* 英音更「绅士」一点 */
+      else if(/^en-us/.test(lang)) s += 10;
+      if(/google|neural|natural|enhanced|premium/i.test(n)) s += 12;
+      if(/compact|espeak|pico/i.test(n)) s -= 25;
+      if(s > bs){ bs = s; best = v; }
+    }
+    return bs >= 40 ? best : null;    /* 没明确写着男的就不硬套 */
+  }catch(e){ return null; }
+}
+
+/* 朗读：浏览器自带语音合成（TTS），离线可用。onend 可选（读完 / 出错都会调）。
+   —— 音色：有男声用男声，没有就用系统默认。
+      不指定「需联网」的音色：安卓上这类音色连不上会静音失败。
    —— 时序：安卓 Chrome 在 cancel() 之后立刻 speak() 经常一声不响，所以先 cancel、
-      隔一帧再发；再加 3.5 秒看门狗，迟迟没出声就重发一次（不指定音色）。 */
+      隔一帧再发；再加 3.5 秒看门狗，迟迟没出声就重发一次（第二次不指定音色）。 */
 var __speakSeq = 0;
 function speak(text, onend){
   text = String(text == null ? '' : text).replace(/\s+/g, ' ').trim();
@@ -845,6 +870,7 @@ function speak(text, onend){
   var synth = window.speechSynthesis;
   var my = ++__speakSeq;
   var done = false;
+  var male = pickMaleVoice();
   function finish(){ if(done) return; done = true; if(onend){ try{ onend(); }catch(e){} } }
 
   function utter(retry){
@@ -852,6 +878,7 @@ function speak(text, onend){
     var u = new SpeechSynthesisUtterance(text);
     u.lang = 'en-US';
     u.rate = 0.95;
+    if(!retry && male){ try{ u.voice = male; u.lang = male.lang || 'en-US'; }catch(e){} }
     var started = false;
     var guard = setTimeout(function(){
       if(started || done || my !== __speakSeq) return;
@@ -899,52 +926,34 @@ function playMp3OrSpeak(url, fallbackText){
   aud.play().then(function(){ if(curAud === aud){ curAudUrl = url; } }).catch(fbSpeak);
 }
 
-/* ================= 商务朗读：好音色优先 + 点一次出声、再点停止 =================
-   安卓自带英文 TTS 常是机器音（国产 ROM 尤其明显），iPhone 的系统音色还行。
-   音色按三档降级，哪一档失败都往下走，绝不会哑：
-   ① 高清：百度翻译的朗读接口（国内直连、不用 key、不耗任何额度），返回 mp3，
-      接近真人；安卓默认走这条，iPhone 默认不用（系统音色本来就够）；
-   ② 系统朗读：手机自带 TTS；
-   ③ 系统朗读重发：speak() 内部有 3.5 秒看门狗，迟迟没出声会再发一次。
-   切换：控制台 __bizVoice('web' | 'system' | 'auto')。
-   注意：原先那条 Cloudflare MeloTTS 路线已停用——workers.dev 在国内常被解析到
-   不存在的地址，点了会白等十几秒、然后没声音。worker 里的 /tts2 端口保留不动。 */
-var bizSayActive = -1;      /* 正在朗读的句子序号，-1 = 没在播 */
-var bizSpeakToken = 0;      /* 每次点击自增，用来作废上一句还没回来的回调 */
+/* ================= 朗读：词表和商务版块共用同一个音源 =================
+   为什么不用手机自带 TTS：安卓自带的英文音色通常只有国产引擎那一个机器女声，
+   iPhone 好一些，但两端完全不一样。这里统一走「百度朗读接口」——
+   国内直连、不需要 key、不耗任何 Cloudflare 额度，返回 mp3，是真人录音。
+   ⚠ 它只接受「不带 Referer」的请求：外站 Referer 会被回一个 0 字节的空响应
+     （页面 head 里那句 meta referrer=no-referrer 就是为它加的，别删）。
+     这正是上一版"三个选项听起来一样、全是机器女声"的根因。
+   失败（离线 / 接口抽风 / 4 秒还没出声）→ 自动退回手机自带朗读，绝不会哑；
+   退回时若有系统男声就优先用男声。 */
+var saySeq = 0;              /* 每次朗读自增，用来作废上一句的回调 */
 
-var BIZ_VOICE_LS = 'qx.biz.voice';        /* auto | web | system */
-function bizVoiceMode(){
-  try{ return localStorage.getItem(BIZ_VOICE_LS) || 'auto'; }catch(e){ return 'auto'; }
-}
-function bizVoiceSet(m){ try{ localStorage.setItem(BIZ_VOICE_LS, m); }catch(e){} }
-function bizVoiceLabel(){
-  var m = bizVoiceMode();
-  return m === 'web' ? '高清' : (m === 'system' ? '本机' : '自动');
-}
-window.__bizVoice = function(m){
-  if(m === 'web' || m === 'system' || m === 'auto'){ bizVoiceSet(m); return m; }
-  return bizVoiceMode();
-};
-function bizUseWebVoice(){
-  var m = bizVoiceMode();
-  if(m === 'web') return true;
-  if(m === 'system') return false;
-  return /Android/i.test(navigator.userAgent || '');   /* auto：只有安卓需要借外力 */
-}
-/* 百度朗读接口：文本太长会被拒，截到 480 字符（商务单句基本都在 200 以内） */
-function bizWebTtsUrl(t){
+/* 百度朗读接口：太长会被拒，截到 480 字符（商务单句基本都在 200 以内） */
+function sayUrl(t){
   return 'https://fanyi.baidu.com/gettts?lan=en&spd=3&source=web&text='
        + encodeURIComponent(String(t).slice(0, 480));
 }
-/* 播高清音频：4 秒还没出声就当失败，立刻退回系统朗读。
-   alive() 用于确认这一句还是「当前这句」——用户中途点了停止，就不再补念。 */
-function bizPlayWeb(text, onend, alive){
-  var done = false, settled = false, timer = null;
+/* 统一朗读入口：先高清（百度 mp3），4 秒没出声就退回系统朗读 */
+function say(text, onend){
+  text = String(text == null ? '' : text).replace(/\s+/g, ' ').trim();
+  if(!text){ if(onend){ try{ onend(); }catch(e){} } return; }
+  var my = ++saySeq;
+  var done = false;
   function finish(){ if(done) return; done = true; if(onend){ try{ onend(); }catch(e){} } }
-  function isAlive(){ return !alive || alive(); }
+  stopSound();                       /* 同一时刻只播一个 */
   var aud = new Audio();
   aud.preload = 'auto';
   curAud = aud;
+  var settled = false, timer = null;
   function cleanup(){ if(curAud === aud){ curAud = null; curAudUrl = null; } }
   function fallback(){
     if(settled) return;
@@ -952,8 +961,8 @@ function bizPlayWeb(text, onend, alive){
     if(timer){ clearTimeout(timer); timer = null; }
     try{ aud.onerror = null; aud.onended = null; aud.pause(); }catch(e){}
     cleanup();
-    if(!isAlive()){ finish(); return; }     /* 已被停止 → 不再补念 */
-    speak(text, finish);
+    if(my !== saySeq){ finish(); return; }   /* 已被新的朗读顶掉 */
+    speak(text, finish);                     /* 退回手机自带朗读 */
   }
   timer = setTimeout(function(){
     if(!settled && !(aud.currentTime > 0)) fallback();
@@ -966,18 +975,12 @@ function bizPlayWeb(text, onend, alive){
     cleanup(); finish();
   };
   aud.onerror = fallback;
-  try{ aud.src = bizWebTtsUrl(text); }catch(e){ fallback(); return; }
+  try{ aud.src = sayUrl(text); }catch(e){ fallback(); return; }
   var p = aud.play();
   if(p && p.catch) p.catch(fallback);
 }
-function bizSpeak(text, onend){
-  var done = false;
-  function finish(){ if(done) return; done = true; if(onend){ try{ onend(); }catch(e){} } }
-  if(!bizUseWebVoice()){ speak(text, finish); return; }
-  stopSound();
-  var my = bizSpeakToken;
-  bizPlayWeb(text, finish, function(){ return my === bizSpeakToken; });
-}
+/* 商务朗读按钮的开关状态：-1 = 没在播，其余 = 正在播的句子序号 */
+var bizSayActive = -1;
 function bizSayPaint(){
   var list = document.querySelectorAll('.flow .sayb');
   for(var i = 0; i < list.length; i++){
@@ -987,7 +990,7 @@ function bizSayPaint(){
   }
 }
 function bizSayStop(){
-  bizSpeakToken++;        /* 作废还在路上的云端请求 */
+  saySeq++;               /* 作废还在路上的朗读回调 */
   stopSound();
   bizSayActive = -1;
   bizSayPaint();
@@ -1320,7 +1323,7 @@ function studyCardHtml(s, kind, w, learned, hardOn){
 }
 function bindCard(s, w){
   var bs = $('btnSound');
-  if(bs) bs.onclick = function(){ stopSound(); speak(w[0]); };
+  if(bs) bs.onclick = function(){ say(w[0]); };
   var bh = $('btnHard');
   if(bh) bh.onclick = function(){
     toggleHard(s.slug, curIdx);
@@ -1620,7 +1623,7 @@ function renderReview(){
   html += '<div class="rev-meta">记得 → 间隔拉长（1→3→7→15→30→60 天）· 忘了 → 明天再来</div>';
   $('app').innerHTML = html;
 
-  $('rvSound').onclick = function(){ stopSound(); speak(w[0]); };
+  $('rvSound').onclick = function(){ say(w[0]); };
   $('rvHard').onclick = function(){ toggleHard(it.slug, it.idx); renderReview(); };
   if($('rvShow')) $('rvShow').onclick = function(){ revShown = true; renderReview(); };
   if($('rvRemember')) $('rvRemember').onclick = function(){ gradeReview(it.key, true); revPos++; revShown = false; renderReview(); };
@@ -1789,7 +1792,7 @@ function renderBookChapters(){
 /* ================= 视图：章节双语学习流 ================= */
 var apecCur = 0;
 function renderChapterFlow(){
-  bizSayActive = -1; bizSpeakToken++;   /* 换章/重渲染：先把上一条的朗读停干净 */
+  bizSayActive = -1; saySeq++;          /* 换章/重渲染：先把上一条的朗读停干净 */
   stopSound();
   var bk = findBook(route.slug);
   if(!bk){ redirectTo('#/'); return; }
@@ -1836,9 +1839,7 @@ function renderChapterFlow(){
   html += '<div class="controls">'
        + '<button class="btn-nav" id="btnPrev">上一条</button>'
        + '<button class="btn-mark ' + (arr.indexOf(apecCur)!==-1?'off':'') + '" id="btnMark">' + (arr.indexOf(apecCur)!==-1?'撤销已学':'标记已学') + '</button>'
-       + '<button class="btn-nav" id="btnNext">下一条</button>'
-       + (String(bk.bookId).indexOf('biz') === 0 ? '<button class="btn-nav btn-voice" id="btnVoice">🔉 ' + bizVoiceLabel() + '</button>' : '')
-       + '</div>';
+       + '<button class="btn-nav" id="btnNext">下一条</button></div>';
   html += '<div class="hint">← → 切换 · 空格 / 回车 标记已学 · 当前第 ' + (apecCur+1) + ' / ' + bl.length + ' 条</div>';
   $('app').innerHTML = html;
 
@@ -1858,28 +1859,11 @@ function renderChapterFlow(){
       bizSayStop();
       bizSayActive = i;
       bizSayPaint();
-      bizSpeak(stripSpeakerLabel(sayTexts[i]), function(){
+      say(stripSpeakerLabel(sayTexts[i]), function(){
         if(bizSayActive === i){ bizSayActive = -1; bizSayPaint(); }
       });
     };
   });
-
-  /* 商务音色开关：自动 → 高清 → 本机 循环。高清走百度朗读接口（联网、不耗额度） */
-  var vbtn = document.getElementById('btnVoice');
-  if(vbtn){
-    vbtn.onclick = function(ev){
-      if(ev && ev.preventDefault) ev.preventDefault();
-      var seq = ['auto', 'web', 'system'];
-      var i = seq.indexOf(bizVoiceMode());
-      i = (i + 1) % seq.length;
-      bizVoiceSet(seq[i]);
-      vbtn.textContent = '🔉 ' + bizVoiceLabel();
-      bizSayStop();
-      toast(seq[i] === 'web' ? '朗读音色：高清（联网，接近真人）'
-          : seq[i] === 'system' ? '朗读音色：手机自带'
-          : '朗读音色：自动（安卓用高清，iPhone 用自带）');
-    };
-  }
 
   function go(idx){ apecCur = idx; renderChapterFlow(); }
 

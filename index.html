@@ -25,6 +25,7 @@
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html{-webkit-text-size-adjust:100%}
+html,body{overflow-x:clip;max-width:100%;overscroll-behavior-x:none}
 body{
   background:var(--bg);
   color:var(--ink);
@@ -3340,6 +3341,79 @@ ssRestoreView();
     if(!ttsAudio){ ttsAudio = new Audio(); ttsAudio.preload = 'auto'; }
     return ttsAudio;
   }
+  /* ---- 音量自动校准（AGC）----
+     iOS 对「程序化播放」有一套降档策略：同一个 <audio> 第一句按系统音量放，
+     后面的句子往往被压得很小声——这就是「第一句特别大、后面变小」的来源。
+     另外云端合成的每句响度也不完全一致。
+     做法：把常驻 <audio> 接进 Web Audio 音频图（MediaElementSource → GainNode →
+     Analyser → 输出），播放时每 100ms 量一次真实 RMS，把增益朝着目标值拉平。
+     这样不管系统怎么降档、每句原始音量多大，听感都一致。
+     拿不到 AudioContext 的环境自动跳过，退回原来直连播放，不会哑。 */
+  var actx = null, again = null, anlz = null, agcTimer = null, anlzBuf = null, agcRms = 0, agcFresh = false;
+  var AGC_TARGET = 0.12, AGC_MIN = 0.5, AGC_MAX = 4.2;
+  function ensureAudioGraph(){
+    if(again) return true;
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if(!AC) return false;
+    try{
+      actx = new AC();
+      again = actx.createGain(); again.gain.value = 1;
+      anlz = actx.createAnalyser(); anlz.fftSize = 1024;
+      var src = actx.createMediaElementSource(ttsEl());
+      src.connect(again); again.connect(anlz); anlz.connect(actx.destination);
+      anlzBuf = new Float32Array(anlz.fftSize);
+      return true;
+    }catch(e){ actx = null; again = null; anlz = null; return false; }
+  }
+  function startAGC(){
+    if(!ensureAudioGraph()) return;
+    try{ if(actx.state !== 'running') actx.resume(); }catch(e){}
+    if(agcTimer) return;
+    again.gain.value = 1;                       /* 每句从 1 起，播放中很快校准到位 */
+    agcFresh = true;
+    agcTimer = setInterval(function(){
+      try{
+        if(!currentAudio || currentAudio.paused) return;
+        if(anlz.getFloatTimeDomainData){
+          anlz.getFloatTimeDomainData(anlzBuf);
+        }else{
+          var b = new Uint8Array(anlz.fftSize);
+          anlz.getByteTimeDomainData(b);
+          for(var k = 0; k < b.length; k++) anlzBuf[k] = (b[k] - 128) / 128;
+        }
+        var sum = 0;
+        for(var i = 0; i < anlzBuf.length; i++) sum += anlzBuf[i] * anlzBuf[i];
+        var rms = Math.sqrt(sum / anlzBuf.length);
+        agcRms = rms;
+        if(rms < 0.004) return;                  /* 换气/静音段不调，避免把底噪放大 */
+        var want = AGC_TARGET / rms;
+        var nx;
+        if(agcFresh){ nx = want; agcFresh = false; }     /* 句首一次到位，别让头半秒偏小 */
+        else { nx = again.gain.value + (want - again.gain.value) * 0.4; }
+        again.gain.value = Math.max(AGC_MIN, Math.min(AGC_MAX, nx));
+      }catch(e){}
+    }, 100);
+  }
+  function stopAGC(){
+    if(agcTimer){ clearInterval(agcTimer); agcTimer = null; }
+    if(again){ try{ again.gain.value = 1; }catch(e){} }
+  }
+  /* 自检用：在控制台执行 __agcDebug() 能看到音频图是否建立、当前增益多少 */
+  window.__agcDebug = function(){
+    return {
+      graph: !!again, state: actx ? actx.state : 'none',
+      gain: again ? Math.round(again.gain.value * 100) / 100 : null,
+      rms: Math.round(agcRms * 10000) / 10000,
+      playing: !!(currentAudio && !currentAudio.paused),
+      t: currentAudio ? Math.round(currentAudio.currentTime * 10) / 10 : null
+    };
+  };
+  /* 从后台切回来时音频上下文可能被系统挂起：恢复它，否则会没声 */
+  document.addEventListener('visibilitychange', function(){
+    if(document.visibilityState === 'visible' && actx){
+      try{ if(actx.state !== 'running') actx.resume(); }catch(e){}
+    }
+  });
   function cachePut(key, url){
     if(ttsCache[key]) return;
     ttsCache[key] = url; ttsOrder.push(key);
@@ -3352,6 +3426,7 @@ ssRestoreView();
   function stopCurrentTTS(){
     speakSerial++;
     speakToken++;          /* 让逐句播报的队列立刻作废，后面的句子不再出声 */
+    stopAGC();
     try{ window.speechSynthesis.cancel(); }catch(e){}
     if(currentAudio){ try{ currentAudio.pause(); }catch(e){} currentAudio = null; }
   }
@@ -3439,6 +3514,11 @@ ssRestoreView();
     audio.src = url;
     /* 双保险：万一静音状态被别处遗留（如解锁失败），正式播放前强制打开 */
     try{ audio.muted = false; }catch(e){}
+    /* 每句播放前挂上音频图并启动音量校准：iOS 的「第一句大、后面小」由它拉平 */
+    try{
+      if(ensureAudioGraph() && actx.state !== 'running') actx.resume();
+    }catch(e){}
+    startAGC();
     /* 语速在这里生效：云端合成接口不接受 speed 参数，但音频播放可以变速不变调。
        好处是同一句话换个语速不用重新合成，省额度。 */
     try{
@@ -3449,8 +3529,8 @@ ssRestoreView();
     }catch(e){}
     currentAudio = audio;
     lastPlayBlocked = false;
-    audio.onended = function(){ if(currentAudio === audio) currentAudio = null; done(); };
-    audio.onerror = function(){ if(currentAudio === audio) currentAudio = null; done(); };
+    audio.onended = function(){ if(currentAudio === audio) currentAudio = null; stopAGC(); done(); };
+    audio.onerror = function(){ if(currentAudio === audio) currentAudio = null; stopAGC(); done(); };
     var p = audio.play();
     if(!p || !p.then) return;
     p.then(function(){
@@ -3863,6 +3943,9 @@ ssRestoreView();
       var p = a.play();
       if(p && p.then){ p.then(function(){ a.muted = false; }).catch(function(){ a.muted = false; }); }
       else { a.muted = false; }
+      /* 顺手把音频图建好：createMediaElementSource / AudioContext 在 iOS 上必须在手势里
+         首次创建，否则会一直是 suspended —— 那样反而更没声 */
+      if(ensureAudioGraph()){ try{ if(actx.state !== 'running') actx.resume(); }catch(e){} }
     }catch(e){ try{ ttsEl().muted = false; }catch(e2){} }
     try{
       // 同步解锁 speechSynthesis
@@ -4041,7 +4124,7 @@ ssRestoreView();
           if(e.results[i].isFinal) finalText += t + ' '; else interim = t;
         }
         var inp = document.getElementById('coachText');
-        if(inp) inp.value = (finalText + interim).trim();
+        if(inp){ inp.value = (finalText + interim).trim(); if(window.__coachGrow) window.__coachGrow(); }
         var el = document.getElementById('coachVoice');
         if(el){ el.textContent = '🎙️ 正在听…说完点一下🎤结束'; el.classList.add('on'); }
       };
@@ -4171,7 +4254,7 @@ ssRestoreView();
     stopListening();
     // 清空输入框，避免上一个角色没发的话跑到新角色
     var inp = document.getElementById('coachText');
-    if(inp) inp.value = '';
+    if(inp){ inp.value = ''; if(window.__coachGrow) window.__coachGrow(); }
     aiBusy = false;
     persistSession();
     state.role = r;
@@ -4675,7 +4758,7 @@ ssRestoreView();
       + '.coach-voice{margin:0;padding:8px 12px;background:var(--accent-soft);color:var(--ink);border-radius:8px;font-size:13px;min-height:20px;display:none}'
       + '.coach-voice.on{display:block}'
       + '.coach-input{display:flex;gap:8px;align-items:flex-end}'
-      + '.coach-input textarea{flex:1;padding:10px 12px;border:1px solid var(--hair);border-radius:10px;background:var(--surface);color:var(--ink);outline:none;font:inherit;line-height:1.5;resize:none;max-height:130px;min-height:44px;box-sizing:border-box}'
+      + '.coach-input textarea{flex:1;padding:10px 12px;border:1px solid var(--hair);border-radius:10px;background:var(--surface);color:var(--ink);outline:none;font-family:inherit;font-size:16px;line-height:1.5;resize:none;max-height:210px;min-height:96px;box-sizing:border-box}'
       + '.coach-input textarea:focus{border-color:var(--accent)}'
       + '.mic-btn{font-size:15px;font-weight:600;min-width:72px;padding:11px 14px;white-space:nowrap}'
       + '.coach-stats{font-size:12px;color:var(--faint);margin-top:2px}'
@@ -4706,6 +4789,7 @@ ssRestoreView();
       + '.rel-mem-empty{color:var(--muted);border-style:dashed;background:transparent}'
       + '.crole-hint{font-size:12px;color:var(--faint)}'
       + '@media (max-width:600px){.topbar-inner{gap:5px;padding-left:10px;padding-right:10px}.topbar .navlink{padding:0 6px;font-size:13px}.topbar .brand{font-size:15px;gap:5px}.topbar .brand-mark{width:22px;height:22px;font-size:14px}.crole-btn{flex:1 1 46%}}'
+      + '@media (max-height:700px){.coach-chat{max-height:36vh}}'
       + '</style>'
       + '<div class="coach">'
       +   '<div class="coach-head"><h2>语伴</h2><p>选一个语伴和话题开口聊 · 点🎤说一句话，识别结果进输入框，核对或修改后再发送；AI 的回复会自动带语音播出</p></div>'
@@ -4731,7 +4815,7 @@ ssRestoreView();
       +   '</div>'
       +   '<div class="coach-input">'
       +     '<button class="cbtn mic-btn" id="coachHands" title="点一下开始说话；再点一下结束（识别结果进输入框，核对后点发送）">🎤</button>'
-      +     '<textarea id="coachText" rows="2" placeholder="点🎤说话，或直接打字；核对无误后点发送 · Enter 发送，Shift+Enter 换行"></textarea>'
+      +     '<textarea id="coachText" rows="3" placeholder="点🎤说话，或直接打字；核对无误后点发送 · Enter 发送，Shift+Enter 换行"></textarea>'
       +     '<button class="cbtn" id="coachSend">发送</button>'
       +   '</div>'
       +   '<div class="ctip" id="coachTip"></div>'
@@ -4750,14 +4834,20 @@ ssRestoreView();
     var topicsRoot = document.getElementById('coachTopics');
     document.getElementById('coachSend').addEventListener('click', function(){
       var inp = document.getElementById('coachText');
-      coachSend(inp.value).catch(coachSendFail); inp.value='';
+      coachSend(inp.value).catch(coachSendFail); inp.value=''; if(window.__coachGrow) window.__coachGrow();
     });
     var ct = document.getElementById('coachText');
     ct.addEventListener('keydown', function(ev){
       if(ev.key === 'Enter' && !ev.shiftKey){ ev.preventDefault(); coachSend(this.value).catch(coachSendFail); this.value=''; autoGrowText(); }
       // Shift+Enter 由浏览器默认插入换行
     });
-    function autoGrowText(){ ct.style.height = 'auto'; ct.style.height = Math.min(ct.scrollHeight, 130) + 'px'; }
+    /* 输入框自适应：默认 3 行（约 96px，CSS min-height 兜底），内容多了最高长到 210px，
+       再长就在框内滚动。改大是为了方便回头修改/调整整段话。 */
+    function autoGrowText(){
+      ct.style.height = 'auto';
+      ct.style.height = Math.min(Math.max(ct.scrollHeight, 96), 210) + 'px';
+    }
+    window.__coachGrow = autoGrowText;   /* 录音识别等外部赋值后也能重新撑高 */
     ct.addEventListener('input', function(){
       autoGrowText();
       finalText = ct.value;   // 你手动改过输入框后，以你改的为准，识别结果在你改的基础上追加
@@ -4829,23 +4919,74 @@ ssRestoreView();
   };
 })();
 /* 单词学习页：左右滑屏翻页（左滑=下一个，右滑=上一个，与按钮等效）
-   只在 #/words/xxx 页面生效；横向位移 ≥60px 且明显大于纵向才触发，不影响正常上下滚动 */
+   只在 #/words/xxx 页面生效。手指按下后先判方向：
+   · 横向占优 → 接管手势、阻止页面滚动，只有卡片跟着手指走，松手过 60px 才翻页
+   · 纵向占优 → 立刻放手，页面照常上下滚动
+   以前只监听 touchend，滑动过程中整屏会跟着滚/回弹，就是「整个屏幕都在动」的来源。 */
 (function(){
-  var tSX = 0, tSY = 0, tST = 0, tArm = false;
+  var sx = 0, sy = 0, st = 0, locked = false, armed = false, card = null, vw = 360;
+  function inStudy(){ return typeof route !== 'undefined' && route.view === 'words' && !!route.slug; }
+  function resetCard(el){
+    if(!el) return;
+    el.style.transition = '';
+    el.style.transform = '';
+    el.style.opacity = '';
+  }
   document.addEventListener('touchstart', function(e){
-    tArm = (typeof route !== 'undefined' && route.view === 'words' && route.slug);
-    if(!tArm) return;
-    tSX = e.touches[0].clientX; tSY = e.touches[0].clientY; tST = Date.now();
+    armed = inStudy();
+    if(!armed) return;
+    var t = e.touches[0];
+    sx = t.clientX; sy = t.clientY; st = Date.now();
+    locked = false;
+    vw = window.innerWidth || 360;
+    card = document.querySelector('#app .flashcard');
+    if(card) card.style.transition = 'none';
   }, {passive:true});
+
+  document.addEventListener('touchmove', function(e){
+    if(!armed) return;
+    var t = e.touches[0];
+    var dx = t.clientX - sx, dy = t.clientY - sy;
+    if(!locked){
+      if(Math.abs(dy) > 10 && Math.abs(dy) >= Math.abs(dx)){   /* 往下/上滑：让页面滚，别拦 */
+        armed = false; resetCard(card); card = null; return;
+      }
+      if(Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy) * 1.2) locked = true;
+      else return;
+    }
+    if(!card) return;
+    if(e.cancelable) e.preventDefault();     /* 关键：横向滑时页面不跟着动 */
+    var shift = Math.max(-vw * 0.55, Math.min(vw * 0.55, dx));
+    card.style.transform = 'translateX(' + shift + 'px)';
+    card.style.opacity = String(Math.max(0.55, 1 - Math.abs(dx) / vw));
+  }, {passive:false});
+
   document.addEventListener('touchend', function(e){
-    if(!tArm) return;
-    tArm = false;
-    var dx = e.changedTouches[0].clientX - tSX;
-    var dy = e.changedTouches[0].clientY - tSY;
-    if(Date.now() - tST > 900) return;
-    if(Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-    var b = document.getElementById(dx < 0 ? 'btnNext' : 'btnPrev');
-    if(b) b.click();
+    if(!armed || !card) { armed = false; return; }
+    armed = false;
+    var el = card; card = null;
+    var dx = e.changedTouches[0].clientX - sx;
+    var dy = e.changedTouches[0].clientY - sy;
+    var go = locked && Date.now() - st < 900
+          && Math.abs(dx) >= 60 && Math.abs(dx) >= Math.abs(dy);
+    if(!go){                                  /* 没滑够：卡片弹回原位 */
+      el.style.transition = 'transform .18s ease-out, opacity .18s ease-out';
+      el.style.transform = '';
+      el.style.opacity = '';
+      return;
+    }
+    el.style.transition = 'transform .16s ease-out, opacity .16s ease-out';
+    el.style.transform = 'translateX(' + (dx < 0 ? -1 : 1) * vw * 0.9 + 'px)';
+    el.style.opacity = '0';
+    setTimeout(function(){
+      var b = document.getElementById(dx < 0 ? 'btnNext' : 'btnPrev');
+      if(b) b.click();
+    }, 130);
+  }, {passive:true});
+
+  document.addEventListener('touchcancel', function(){
+    armed = false;
+    resetCard(card); card = null;
   }, {passive:true});
 })();
 /* 启动：先显示外壳，词库 words.json 加载完成后进入应用。

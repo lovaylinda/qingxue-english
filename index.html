@@ -3342,6 +3342,8 @@ ssRestoreView();
     try{ audio.pause(); }catch(e){}
     audio.onended = null; audio.onerror = null;
     audio.src = url;
+    /* 双保险：万一静音状态被别处遗留（如解锁失败），正式播放前强制打开 */
+    try{ audio.muted = false; }catch(e){}
     /* 语速在这里生效：云端合成接口不接受 speed 参数，但音频播放可以变速不变调。
        好处是同一句话换个语速不用重新合成，省额度。 */
     try{
@@ -3858,13 +3860,16 @@ ssRestoreView();
   function unlockAudioForIOS(){
     if(_iosAudioUnlocked) return;
     _iosAudioUnlocked = true;    try{
-      // 用同一个常驻 <audio> 在手势内播放一次，之后它就能被代码自动播放（iOS 关键一步）
+      // 用同一个常驻 <audio> 在手势内播放一次，之后它就能被代码自动播放（iOS 关键一步）。
+      // 必须先给它一个可播放的 src：空 src 的 play() 会直接 reject，
+      // 老代码在失败分支里忘了解除 muted，导致整个音频元素永久静音（语音全哑的元凶）。
       var a = ttsEl();
+      a.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
       a.muted = true;
       var p = a.play();
-      if(p && p.then){ p.then(function(){ a.muted = false; }).catch(function(){}); }
+      if(p && p.then){ p.then(function(){ a.muted = false; }).catch(function(){ a.muted = false; }); }
       else { a.muted = false; }
-    }catch(e){}
+    }catch(e){ try{ ttsEl().muted = false; }catch(e2){} }
     try{
       // 同步解锁 speechSynthesis
       if('speechSynthesis' in window){

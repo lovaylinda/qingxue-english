@@ -2301,6 +2301,40 @@ ssRestoreView();
     '职业意义':'职业规划','人际关系':'情感共情','压力与情绪':'情感共情','关系沟通':'情感共情',
     '习惯养成':'个人成长','专注与效率':'认知提升的重要性','养生与睡眠':'健康养生'
   };
+  /* 细话题 → 真实对白大类。
+     背景：resolveTopics 遇到 CORPUS 里的细分话题（瑜伽、育儿与教育…）时只用自己的
+     几十条，不会去挂大类索引，于是 EnglishPod / 走遍美国 / 剧集里已经归档到
+     「家庭孩子」「健康养生」「旅行出差」等大类的真实对白，一句都进不了这些细话题。
+     这里显式挂上，但**不能整类照搬**：「健康养生」里既有 Going To The Gym 也有
+     Emergency Room，把急诊对白塞进「瑜伽」会非常跳。所以每条都带一个标题正则，
+     只取语义对得上的那几集。re 为空表示整类都要。
+     没有对应实录的话题（牙科技术术语、太极、深圳历史发展）干脆不挂，由人工语料承担。 */
+  var REAL_SRC_MAP = {
+    '育儿与教育':   { src:['家庭孩子'], re:/Cleaning|Laundry|Baby Talk|Grounded|Nanny|Playground|Homeschool|Report Card|University|Roommate|Relative|Barbecue|Household|Parent Teacher/i },
+    '亲子关系':     { src:['家庭孩子'], re:/Baby Talk|Grounded|Nanny|Playground|Homeschool|Report Card|University|Roommate|Relative|Household|Parent Teacher/i },
+    '瑜伽':         { src:['健康养生'], re:/Gym|Working Out|Diet|Sleep|First Aid/i },
+    '户外Hiking':   { src:['旅行出差','健康养生'], re:/Skiing|Beach|Adventure Sports|Road Trip|Directions/i },
+    '运动对生命健康的意义': { src:['健康养生'], re:/Gym|Working Out|Diet|First Aid|CPR|Sleep|Insurance/i },
+    '中国养生文化': { src:['健康养生'], re:/Chinese Medicine|Pharmacy|Diet|Sleep|Botox|Allergies/i },
+    '牙科行业与前景': { src:['健康养生'], re:/Dentist|Toothache/i },
+    '出国场景':     { src:['旅行出差'], re:null },
+    '扩大生命边界': { src:['旅行出差'], re:/Trip|Adventure|Beach|Skiing|Travel Agent|Directions/i },
+    '深圳自然':     { src:['旅行出差'], re:/Beach|Adventure Sports|Skiing|Directions/i },
+    '合作可能性探讨': { src:['工作商务'], re:/Deal|Purchasing|Sales|Quote|Marketing|Fundraiser|Meeting/i },
+    '报价谈判与交期': { src:['工作商务'], re:/Quote|Deal|Sales|Purchasing|Deadline|Stock Market|Forex|numbers|Comparisons/i },
+    '展会与客户接待': { src:['工作商务'], re:/Presentation|Audience|Quote|Difficult Customer|Appointment|Small Talk/i },
+    '外贸客户开发实景': { src:['工作商务'], re:/Sales|Difficult Customer|Purchasing|Deal|Marketing|Emerging Markets/i },
+    '货运与清关':   { src:['旅行出差','工作商务'], re:/Customs|Deadline|Purchasing|Driver|Mechanic|Car Trouble/i },
+    '创业与事业':   { src:['工作商务'], re:/Business Plan|Investing|Loan|Fundraiser|Fired|Raise|Job Hunting|Assistant/i },
+    '职业规划':     { src:['工作商务'], re:/Interview|Job Hunting|Raise|Fired|Paycheck|Work Experience|Strengths|Weaknesses|Salary/i },
+    '亲密关系':     { src:['家庭孩子'], re:/I.m Sorry|Girlfriend|Wedding|Divorce|Romance|Song/i }
+  };
+  /* englishpod_dialogues.js 有 4.6MB，只有真实对白增益明显（约 +20 条以上）的话题才值得
+     为它触发下载；其余话题（瑜伽 +7、牙科 +3 这种）只在源恰好已加载时才受益，不主动拉。 */
+  var REAL_PRELOAD = {
+    '亲密关系':1, '出国场景':1, '育儿与教育':1, '创业与事业':1,
+    '职业规划':1, '展会与客户接待':1, '外贸客户开发实景':1
+  };
   /* 走遍美国：按「集号」1-26 → 主题标签，未列出的默认『日常闲聊』
      注意：数据里 n 是全局段号（1-78，每集 3 幕），ep 才是集号（1-26），必须用 ep。 */
   var FA_TITLE_MAP = {
@@ -2557,7 +2591,16 @@ ssRestoreView();
   function needDlg(t){ return !!DIALOGUE_REG[t]; }
   function ensureDialogue(tags){
     var wantSrc = {};
+    /* 细话题通过 REAL_SRC_MAP 挂了大类真实对白，这里要一起纳入懒加载判断，
+       否则选中「瑜伽」不会去拉 englishpod_dialogues.js，池子还是空的。
+       但只对增益明显的话题主动拉（REAL_PRELOAD），避免为几条语料下载 4.6MB。 */
+    var scan = [];
     (tags || []).forEach(function(t){
+      if(scan.indexOf(t) < 0) scan.push(t);
+      var m = REAL_SRC_MAP[t];
+      if(m && m.src && REAL_PRELOAD[t]) m.src.forEach(function(x){ if(scan.indexOf(x) < 0) scan.push(x); });
+    });
+    scan.forEach(function(t){
       if(needEP(t)) wantSrc['./englishpod_dialogues.js'] = 1;
       if(needFA(t)) wantSrc['./familyalbum_dialogues.js'] = 1;
       var r = DIALOGUE_REG[t];
@@ -2571,22 +2614,65 @@ ssRestoreView();
   /* ---- 跨源按话题索引（增量构建：已加载的源才入索引，重复调用只补新源） ---- */
   var _crossIndex = {}, _crossBuilt = {};
   function pushIndex(topic, family, label, items){
+    /* 配额说明：原来「每来源族 ≤10 条 / 每话题 ≤80 条」把 2,700 多句真实对白
+       硬砍成 90 条在用（每个大类永远只看得到同样 10 句），而且前 5 集的 40 条
+       就把配额吃满，Going To The Gym 这类靠后的集根本进不来。现在放开到
+       每族 300 / 每话题 1500（全量只有 2,700 条，内存无压力），并按句子去重。 */
     var entry = _crossIndex[topic];
-    if(!entry){ entry = _crossIndex[topic] = { list: [], fam: {} }; }
+    if(!entry){ entry = _crossIndex[topic] = { list: [], fam: {}, seen: {} }; }
+    if(!entry.seen){ entry.seen = {}; entry.list.forEach(function(x){ entry.seen[x.en] = 1; }); }
     (items || []).forEach(function(it){
-      if(entry.fam[family] >= 10) return;          /* 每来源族每话题 ≤10 条，防止单一来源独占 */
-      if(entry.list.length >= 80) return;
+      if(!it || !it.en) return;
+      if(entry.seen[it.en]) return;                /* 同一句不重复入池 */
+      if(entry.fam[family] >= 300) return;         /* 每来源族每话题 ≤300 条 */
+      if(entry.list.length >= 1500) return;        /* 每话题 ≤1500 条 */
       entry.fam[family] = (entry.fam[family] || 0) + 1;
+      entry.seen[it.en] = 1;
       entry.list.push({ family: family, label: label, en: it.en, cn: it.cn || '' });
     });
   }
+  function epOkLine(s){
+    if(s.length < 12 || s.length > 130) return false;
+    if(!/^[A-Z"'‘“]/.test(s)) return false;
+    if(/^(Yeah|Yes|No|Okay|OK|Uhu|Hmm|Right|Sure)[.,!]?$/.test(s)) return false;
+    /* 主持人话术：EnglishPod 的讲解会混在同样格式的行里，靠词汇特征剔掉 */
+    if(/EnglishPod|vocabulary|take a listen|our dialogue|today.s lesson|in this lesson|grammar|pronunciation|preview|My name is (Marco|Erica|Catherine|Katherine|Adam|Jenny)/i.test(s)) return false;
+    return true;
+  }
   function epLines(text){
-    var seen = {}, out = [];
-    text.split(/\r?\n/).forEach(function(s){
-      var t = s.replace(/^[A-Z]:\s*/, '').replace(/^[A-Z]\.\s*/, '').trim();
-      if(t.length > 4 && !seen[t]){ seen[t] = 1; out.push({ en: t, cn: '' }); }
+    /* 365 集里约 220 集的文本来自另一套 PDF 排版，「行末带空格=讲解」这个判据不成立，
+       所以分两路：
+       ① 精确路：靠 soft/hard 判据切出对白，拼回被硬断的续行（最干净）；
+       ② 兜底路：整篇逐行取。
+       两路都只认 A:/B: 前缀 —— EnglishPod 的对话双方固定是 A 和 B，
+       主持人讲解用 M:/E:/C:/Voice:，按这个区分比猜句式可靠得多。 */
+    var raw = String(text || '').split('\n');
+    var strict = [], seenS = {};
+    for(var i = 0; i < raw.length; i++){
+      if(/\s$/.test(raw[i])) continue;                         /* 讲解行 */
+      var m = raw[i].match(/^\s*([AB])\s*[:.]\s*(.+)$/);
+      if(!m) continue;
+      var s = m[2].trim();
+      for(var j = i + 1; j < raw.length && !/\s$/.test(raw[j]); j++){
+        if(/^\s*[A-D]\s*[:.]/.test(raw[j])) break;              /* 下一个说话人 */
+        var cont = raw[j].trim();
+        if(!cont) break;
+        s += ' ' + cont; i = j;
+      }
+      s = s.replace(/\s+/g, ' ').replace(/-\s+/g, '').trim();
+      if(!epOkLine(s) || seenS[s]) continue;
+      seenS[s] = 1; strict.push({ en: s, cn: '' });
+    }
+    if(strict.length >= 3) return strict.slice(0, 8);
+    var loose = [], seenL = {};
+    raw.forEach(function(L){
+      var mm = L.match(/^\s*([AB])\s*[:.]\s*(.+)$/);          /* 只要 A/B 对白行 */
+      if(!mm) return;
+      var t = mm[2].replace(/-\s+/g, '').replace(/\s+/g, ' ').trim();
+      if(!epOkLine(t) || seenL[t]) return;
+      seenL[t] = 1; loose.push({ en: t, cn: '' });
     });
-    return out.slice(0, 6);
+    return loose.slice(0, 8);
   }
   function buildTopicIndex(){
     var SC = window.ENGLISHPOD_SCENES || [];
@@ -2731,13 +2817,13 @@ ssRestoreView();
   function invalidateLearnedTexts(){ _learnedTexts = null; }
   function buildLearnedTextIndex(){
     if(_learnedTexts) return _learnedTexts;
-    var set = {};
+    var set = {}, KW = (state && state.kw) || {};   /* 词库还没加载完时 state.kw 可能为空，不能直接索引 */
     if(WORD_DATA){
       WORD_DATA.forEach(function(t){
         var kind = t.kind || 'word';
         if(kind !== 'sentence' && kind !== 'phrase') return;
         (t.words || []).forEach(function(w, i){
-          var r = state.kw[t.slug + '#' + i];
+          var r = KW[t.slug + '#' + i];
           if(r && r.l && w && w[0]) set[wordKey(w[0])] = 1;
         });
       });
@@ -2775,13 +2861,32 @@ ssRestoreView();
       else expanded.push(t);
     });
     chosen = expanded;
-    var lines = [], tip = null, used = {}, priority = [];
+    var lines = [], tip = null, used = {}, priority = [], pushedEn = {};
+    function pushLine(text, cn, label){
+      var k = wordKey(text);
+      if(pushedEn[k]) return;
+      pushedEn[k] = 1;
+      lines.push((label ? '(' + label + ') ' : '') + '"' + text + '"' + (cn ? ' — ' + cn : ''));
+    }
     function useData(name){
       if(used[name]) return; used[name] = 1;
       var data = C.topics[name] || C.topics['通用日常'];
       if(!data) return;
-      data.sentences.forEach(function(s){ if(!learnIdx[wordKey(s.en)]) lines.push('"' + s.en + '" — ' + s.cn); });
-      data.phrases.forEach(function(p){ if(!learnIdx[wordKey(p.phrase)]) lines.push('"' + p.phrase + '" — ' + p.meaning); });
+      data.sentences.forEach(function(s){ if(!learnIdx[wordKey(s.en)]) pushLine(s.en, s.cn); });
+      data.phrases.forEach(function(p){ if(!learnIdx[wordKey(p.phrase)]) pushLine(p.phrase, p.meaning); });
+      /* 挂上语义相关的真实对白（按集标题正则挑，不是整类照搬） */
+      var src = REAL_SRC_MAP[name];
+      if(src){
+        (src.src || []).forEach(function(big){
+          var e = _crossIndex[big];
+          if(!e || !e.list) return;
+          e.list.forEach(function(it){
+            if(learnIdx[wordKey(it.en)]) return;
+            if(src.re && !src.re.test(it.label || '')) return;
+            pushLine(it.en, it.cn, it.label);
+          });
+        });
+      }
       if(!tip){
         var sentPool = data.sentences.filter(function(s){ return !state.tipSeen[s.en] && !learnIdx[wordKey(s.en)]; });
         if(sentPool.length){ tip = sentPool[Math.floor(Math.random()*sentPool.length)]; state.tipSeen[tip.en]=1; }
@@ -2873,13 +2978,19 @@ ssRestoreView();
         if(seenL[l] || learnIdx[wordKey(l)]) return;
         seenL[l] = 1; cand.push(l);
       });
-      cand.sort(function(a, b){ return (_injSeq[wordKey(a)] || 0) - (_injSeq[wordKey(b)] || 0); });
-      var head = cand.slice(0, Math.max(24, (8 - chosenLines.length) * 3));
-      for(var i = head.length - 1; i > 0; i--){
-        var j = Math.floor(Math.random() * (i + 1)), t = head[i]; head[i] = head[j]; head[j] = t;
+      /* 分两组：从未注入过的 / 注入过的。
+         关键修复：原来直接按「上次注入轮次」升序排再取前 24 条，而从未注入过的全是 0 分、
+         按数组原序排列 —— 结果永远是池子最前面那几十条反复被抽，排在后面的
+         （新补的语料、挂上来的真实对白）一辈子抽不到。现在把「从未用过的」先随机打散，
+         再排在最前；「用过的」按最久未用升序跟在后面。 */
+      var never = [], older = [];
+      cand.forEach(function(l){ (_injSeq[wordKey(l)] ? older : never).push(l); });
+      for(var i = never.length - 1; i > 0; i--){
+        var j = Math.floor(Math.random() * (i + 1)), t = never[i]; never[i] = never[j]; never[j] = t;
       }
-      for(var k = 0; k < head.length && chosenLines.length < 8; k++){
-        chosenLines.push(head[k]); _injSeq[wordKey(head[k])] = turn;
+      var ordered = never.concat(older);
+      for(var k = 0; k < ordered.length && chosenLines.length < 8; k++){
+        chosenLines.push(ordered[k]); _injSeq[wordKey(ordered[k])] = turn;
       }
     }
     return { hits: 'Idiomatic expressions to weave in naturally (from a daily-English corpus):\n' + chosenLines.join('\n'), tip: tip, topics: chosen };
@@ -4489,6 +4600,12 @@ ssRestoreView();
   /* ---- 调试钩子（本地端到端验证用）：暴露自动选话题 / 检索 / 跨源索引 ---- */
   window.__coachDebug = {
     pick: function(m){ return coachPickTopics(m || ''); },
+    /* 测试用：强制切到手动选话题（coachPickTopics 在自动模式下会忽略传入的 tags，
+       直接传 tags 给 retrieve 是按当前模式走的，所以要先固定住话题） */
+    setTopics: function(list){ state.auto = false; state.topics = (list || []).slice(); return state.topics.slice(); },
+    setAuto: function(on){ state.auto = !!on; return state.auto; },
+    /* 测试用：清掉增量标记后强制重建跨源索引（排查「源已加载但索引为空」用） */
+    rebuildIndex: function(){ _crossBuilt = {}; _crossIndex = {}; buildTopicIndex(); return Object.keys(_crossIndex).length; },
     retrieve: function(tags, m){ return coachRetrieve((tags && tags.length) ? tags : state.topics, m || ''); },
     indexCount: function(t){ var e = _crossIndex[t]; return e ? e.list.length : 0; },
     indexFams: function(t){ var e = _crossIndex[t]; return e ? Object.keys(e.fam).sort() : []; },

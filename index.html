@@ -437,7 +437,12 @@ function toggleWord(slug, idx){
   return !!(state.kw[k] && state.kw[k].l);
 }
 var _doneCache = null;
-function invalidateDone(){ _doneCache = null; invalidateLearnedTexts(); }
+function invalidateDone(){
+  _doneCache = null;
+  /* invalidateLearnedTexts 定义在语伴模块闭包里（可能尚未初始化），要防未定义 */
+  if(typeof invalidateLearnedTexts === 'function') invalidateLearnedTexts();
+  else if(window.invalidateLearnedTexts) window.invalidateLearnedTexts();
+}
 /* 每张表「已学」多少条：含在其他专题学过的同一个词（用户选择「隐藏但计入」） */
 function doneMap(){
   if(_doneCache) return _doneCache;
@@ -621,6 +626,44 @@ function migrateState(){
   invalidateDone();
   saveState();
   if(moved) console.log('[轻学] 已把 ' + moved + ' 条旧进度迁移到按词存储');
+}
+
+/* ---- 「实用口语」重排后的一次性索引迁移 ----
+   2026-10 把全部语料整理进「实用口语」后，表内顺序变了，
+   而句子表的进度键是 spokens#序号，所以按 words.json 里带的 migrate 映射
+   把老进度搬到新位置，避免「已学」标记错位到别的句子上 */
+function migrateSpokens(){
+  if(state.spMig2) return;
+  var s = findWordSet('spokens');
+  if(!s || !s.migrate){ state.spMig2 = 1; saveState(); return; }
+  var m = s.migrate, moved = 0, hardMoved = 0;
+  Object.keys(state.kw).forEach(function(k){
+    var hit = /^spokens#(\d+)$/.exec(k);
+    if(!hit) return;
+    var to = m[hit[1]];
+    if(to === undefined) return;
+    var nk = 'spokens#' + to;
+    if(nk === k) return;
+    var rec = state.kw[k], prev = state.kw[nk];
+    /* 两个旧序号并到同一新位置时，保留复习档位更靠后的那条 */
+    if(!prev || (rec && (rec.n || 0) > (prev.n || 0))) state.kw[nk] = rec;
+    delete state.kw[k];
+    moved++;
+  });
+  Object.keys(state.hk).forEach(function(k){
+    var hit = /^spokens#(\d+)$/.exec(k);
+    if(!hit) return;
+    var to = m[hit[1]];
+    if(to === undefined) return;
+    var nk = 'spokens#' + to;
+    state.hk[nk] = 1;
+    if(nk !== k) delete state.hk[k];
+    hardMoved++;
+  });
+  state.spMig2 = 1;
+  invalidateDone();
+  saveState();
+  if(moved || hardMoved) console.log('[轻学] 实用口语重排：迁移学习进度 ' + moved + ' 条、难词 ' + hardMoved + ' 条');
 }
 
 /* ---- APEC 手册进度 ---- */
@@ -1133,7 +1176,25 @@ function renderStudy(){
        + '<a class="chip-btn' + (hardNall ? ' on' : '') + '" href="#/hard">⭐ 难词本（全部）<span class="num">' + hardNall + '</span></a>'
        + '</div>';
 
-  /* 本专题已经全部学过（多数可能是在别的专题里学的）：不再逐词翻，给一个总览 */
+  /* 句子表按场景分了类：给一个分类跳转，避免必须从头翻到某个场景 */
+  if(kind === 'sentence' && (s.groups || 0) > 1){
+    if(!s._grpMap){
+      s._grpMap = {}; s._grpOrder = [];
+      s.words.forEach(function(x, i){
+        var g = x[2] || '日常·通用';
+        if(!s._grpMap[g]){ s._grpMap[g] = 0; s._grpOrder.push(g); }
+        s._grpMap[g]++;
+      });
+    }
+    var curG = (s.words[curIdx] && s.words[curIdx][2]) || '';
+    var gopts = '<option value="">全部场景（' + s.words.length.toLocaleString() + ' 条）</option>';
+    s._grpOrder.forEach(function(g){
+      gopts += '<option value="' + esc(g) + '"' + (g === curG ? ' selected' : '') + '>' + esc(g) + '（' + s._grpMap[g] + '）</option>';
+    });
+    html += '<div class="subbar"><select id="grpSel" style="flex:1 1 100%;min-width:0;padding:9px 10px;'
+         + 'border:1px solid var(--hair);border-radius:10px;background:var(--surface);color:inherit;font-size:13px;">'
+         + gopts + '</select></div>';
+  }
   if(!studyShowAll && left <= 0){
     $('app').innerHTML = html + studyEmptyHtml(s);
     bindStudyShell(s, kind);
@@ -1182,6 +1243,21 @@ function renderStudy(){
     var nx = nextUnlearned(s.slug, curIdx, 1);
     if(nx < 0){ toast('本专题已经全部学完 ✓'); return; }
     curIdx = nx; paintCard();
+  };
+  var gsel = $('grpSel');
+  if(gsel) gsel.onchange = function(){
+    var g = gsel.value, start = -1, first = -1;
+    if(!g){ curIdx = 0; }
+    else{
+      for(var i2=0;i2<s.words.length;i2++){
+        if((s.words[i2][2] || '') !== g) continue;
+        if(first < 0) first = i2;
+        if(!learnedAt(s, i2)){ start = i2; break; }
+      }
+      curIdx = start >= 0 ? start : (first >= 0 ? first : 0);
+    }
+    renderStudy();
+    setTimeout(function(){ window.scrollTo(0, 0); }, 40);
   };
   bindCard(s, w);
   $('btnMark').onclick = function(){
@@ -2921,6 +2997,7 @@ ssRestoreView();
   var _injSeq = {}, _injTurn = 0;
   var _learnedTexts = null;
   function invalidateLearnedTexts(){ _learnedTexts = null; }
+  window.invalidateLearnedTexts = invalidateLearnedTexts;   /* 供学习模块的 invalidateDone 调用 */
   function buildLearnedTextIndex(){
     if(_learnedTexts) return _learnedTexts;
     var set = {}, KW = (state && state.kw) || {};   /* 词库还没加载完时 state.kw 可能为空，不能直接索引 */
@@ -4800,10 +4877,12 @@ function renderBootSplash(){
       _setMap = null;
       buildKeySets();
       migrateState();          // 旧版「表+序号」进度 → 按词存储（只需一次）
+      migrateSpokens();        // 「实用口语」重排后，旧序号 → 新序号（只需一次）
       render();
     });
   }
-  load().catch(function(){
+  load().catch(function(e){
+    window.__loadErr = String((e && e.stack) || e).slice(0, 600);
     if(retried){ return; }
     retried = true;
     // 网络抖动重试一次；仍失败则提示

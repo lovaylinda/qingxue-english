@@ -2471,7 +2471,7 @@ ssRestoreView();
   /* 话题 → 英文关键词（自动匹配时按用户发言召回） */
   var TOPIC_KW = {
     '旅行出差':['travel','trip','flight','fly','airport','hotel','train','station','passport','visa','journey','tour','vacation','abroad','beach'],
-    '点餐美食':['food','eat','drink','restaurant','order','menu','coffee','tea','breakfast','lunch','dinner','hungry','delicious','taste','bill','meal'],
+    '点餐美食':['food','eat','drink','restaurant','order','menu','coffee','tea','breakfast','lunch','dinner','hungry','delicious','taste','bill','meal','table','reserve','reservation','waiter','dessert','thirsty','snack'],
     '工作商务':['work','job','business','client','customer','company','meeting','deal','contract','export','trade','sell','buy','project','office','market','supplier','order'],
     '健康养生':['health','sleep','tired','exercise','yoga','walk','run','doctor','medicine','fit','energy','rest','relax','pain','sick','wellness'],
     '日常闲聊':['day','today','weather','rain','home','morning','weekend','fun','movie','book','read','music','hobby','friend','sunny','cold','dog','cat'],
@@ -3287,25 +3287,37 @@ ssRestoreView();
        优先取和消息沾边的，不够随机补；LRU 去重由下方统一处理，全程不重样。 */
     if(window.BIZ_CORPUS && window.BIZ_CORPUS.length){
       var bizOn = chosen.some(function(t){ return /工作|商务|职场|面试/.test(t); });
-      var msgEn = (userMsg || '').toLowerCase().match(/[a-z]{3,}/g) || [];
+      /* 分词后先滤掉 4 字母以下和高频虚词：不然 your/are/about 这类词
+         会把不相干的条目也"命中"，真正沾边的反而被挤出前 3（实测踩过） */
+      var BIZ_STOP = {};
+      ('the,and,you,your,yours,our,ours,are,was,were,have,has,had,will,would,could,should,' +
+       'from,what,when,where,how,this,that,with,about,please,thank,thanks,hello,there,here,' +
+       'more,very,much,many,just,now,some,them,they,their,not,but,all,any,get,got,too,also,can').split(',').forEach(function(w){ BIZ_STOP[w] = 1; });
+      var msgEn = ((userMsg || '').toLowerCase().match(/[a-z]{4,}/g) || []).filter(function(w){ return !BIZ_STOP[w]; });
       var BIZ_CN = /报价|价格|交期|交货|发货|订单|催|货款|发票|样品|会议|改期|面试|道歉|邮件|电话|客户|工厂|谈判|投诉|下单|合同|出口/;
       var cnHit = BIZ_CN.test(userMsg || '');
       if(bizOn || cnHit){
-        var bizHit = [], bizOther = [];
+        var bizScored = [], bizOther = [];
         window.BIZ_CORPUS.forEach(function(o){
           var blob = (o.en + ' ' + o.cn + ' ' + o.tag).toLowerCase();
-          var m = false;
-          for(var bi = 0; bi < msgEn.length; bi++){ if(blob.indexOf(msgEn[bi]) >= 0){ m = true; break; } }
-          if(!m && cnHit){
-            m = BIZ_CN.test(o.en + ' ' + o.cn + ' ' + o.tag);
+          var sc = 0;
+          for(var bi = 0; bi < msgEn.length; bi++){ if(blob.indexOf(msgEn[bi]) >= 0) sc++; }
+          if(!sc && cnHit){
+            sc = BIZ_CN.test(o.en + ' ' + o.cn + ' ' + o.tag) ? 1 : 0;
           }
-          (m ? bizHit : bizOther).push(o);
+          if(sc) bizScored.push({ o: o, k: sc + Math.random() });  /* 得分为主，同分随机 */
+          else bizOther.push(o);
         });
-        var pool = (bizHit.length >= 3) ? bizHit : bizHit.concat(bizOther);
-        for(var bi2 = pool.length - 1; bi2 > 0; bi2--){
-          var bj2 = Math.floor(Math.random() * (bi2 + 1)), bt2 = pool[bi2]; pool[bi2] = pool[bj2]; pool[bj2] = bt2;
+        /* 按命中词数降序取前 3，不足才随机补——保证注入的都是和消息真沾边的 */
+        bizScored.sort(function(a, b){ return b.k - a.k; });
+        var pool = bizScored.slice(0, 3).map(function(x){ return x.o; });
+        if(pool.length < 3){
+          for(var bi2 = bizOther.length - 1; bi2 > 0; bi2--){
+            var bj2 = Math.floor(Math.random() * (bi2 + 1)), bt2 = bizOther[bi2]; bizOther[bi2] = bizOther[bj2]; bizOther[bj2] = bt2;
+          }
+          pool = pool.concat(bizOther.slice(0, 3 - pool.length));
         }
-        pool.slice(0, 3).forEach(function(o){ priority.push('(商务·' + o.tag + ') "' + o.en + '" — ' + o.cn); });
+        pool.forEach(function(o){ priority.push('(商务·' + o.tag + ') "' + o.en + '" — ' + o.cn); });
       }
     }
     chosen.forEach(function(t){
@@ -4138,7 +4150,13 @@ ssRestoreView();
       return pump();
     }).catch(function(err){
       if(killT) clearTimeout(killT);
-      if(myReqId !== requestId) { aiBusy = false; return; }  // 角色已切换，静默丢弃
+      if(myReqId !== requestId){
+        aiBusy = false;
+        /* 新消息/切角色掐掉了旧请求：旧"…"气泡不能永远转下去 */
+        aiBody.classList.remove('c-stream');
+        if(!aiBody.textContent || aiBody.textContent === '…') aiBody.textContent = '（已取消）';
+        return;
+      }  // 角色已切换/新消息发出，旧请求静默丢弃
       aiBody.classList.remove('c-stream');
       if(err.name === 'AbortError'){
         /* 掐断分两种：用户发了新消息主动 abort（静默），或 45 秒超时（要给提示） */
@@ -4322,6 +4340,9 @@ ssRestoreView();
     aiBusy = false;
     persistSession();
     state.role = r;
+    /* 短时记忆角色不设关系档案：切换后同步显隐（renderCoach 是按旧角色渲染的） */
+    var _relBtnR = document.getElementById('coachRel');
+    if(_relBtnR) _relBtnR.style.display = isMemoryless(r) ? 'none' : '';
     state.history = loadHist(r);
     persistSession();
     document.querySelectorAll('#coachRoles button').forEach(function(b){
@@ -4898,7 +4919,7 @@ ssRestoreView();
       +   '<div class="crole-row" id="coachRoles">' + rolesHtml + '</div>'
       +   '<div class="coach-bar">'
       +     '<button class="cbtn' + (state.auto?' active':'') + '" id="coachAuto">' + (state.auto?'✨ 自动匹配':'📌 手动选话题') + '</button>'
-      +     (isMemoryless(state.role) ? '' : '<button class="cbtn cbtn-ghost" id="coachRel">📋 关系档案</button>')
+      +     '<button class="cbtn cbtn-ghost" id="coachRel" style="display:' + (isMemoryless(state.role) ? 'none' : '') + '">📋 关系档案</button>'
       +     '<button class="cbtn cbtn-ghost" id="coachVoicePicker">🎙️ 音色</button>'
       +   '</div>'
       +   '<div class="tgroup tgroup-first"><div class="tgroup-name">生活话题</div><div class="ctopic-row">' + lifeHtml + '</div></div>'

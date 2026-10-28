@@ -123,7 +123,7 @@ window.COMPANIONS = (function(){
       voice: 'athena', voiceSpeed: 1.0,
       randomNames: ['Emma','Lucas','Sofia','Mateo','Amara','Liam','Zoe','Diego','Noor','Felix','Mia','Yuki'],
       randomNations: ['Australian','Italian','Mexican','Korean','Brazilian','Swedish','Spanish','German','French','Canadian'],
-      topics: ['旅行对人的意义','扩大生命边界','人生不同与生命追求','中国人对外国人的看法','外国人对中国的看法','国外风景食物与育儿观','出国场景','日常闲聊','个人成长','生命的意义','美食旅行实拍','真人闲聊对话','出国过境英语'],
+      topics: ['旅行对人的意义','扩大生命边界','人生不同与生命追求','中国人对外国人的看法','外国人对中国的看法','国外风景与美食','出国场景','日常闲聊','个人成长','生命的意义','美食旅行实拍','真人闲聊对话','出国过境英语'],
       accent: {
         fillers: ['you know','I mean','honestly','wow','no way'],
         backchannels: ['right','mhm','yeah','wow'],

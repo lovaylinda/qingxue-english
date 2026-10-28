@@ -437,7 +437,7 @@ function toggleWord(slug, idx){
   return !!(state.kw[k] && state.kw[k].l);
 }
 var _doneCache = null;
-function invalidateDone(){ _doneCache = null; }
+function invalidateDone(){ _doneCache = null; invalidateLearnedTexts(); }
 /* 每张表「已学」多少条：含在其他专题学过的同一个词（用户选择「隐藏但计入」） */
 function doneMap(){
   if(_doneCache) return _doneCache;
@@ -469,6 +469,37 @@ function learnedTotal(){
   return n;
 }
 function uniqueWordTotal(){ return KEY_SETS ? Object.keys(KEY_SETS).length : 0; }
+/* 句子/短语表（kind 不是 word）的条目用「表名#序号」存，不计入 KEY_SETS，
+   所以「已掌握单词」永远是 0 增长。这里单独算一份，首页总进度才不会被漏掉。 */
+function sentenceSlugs(){
+  var out = {};
+  if(!WORD_DATA) return out;
+  for(var i=0;i<WORD_DATA.length;i++){
+    var s = WORD_DATA[i];
+    if(!s.hidden && (s.kind || 'word') !== 'word') out[s.slug] = 1;
+  }
+  return out;
+}
+function sentenceTotal(){
+  var n = 0;
+  if(!WORD_DATA) return 0;
+  for(var i=0;i<WORD_DATA.length;i++){
+    var s = WORD_DATA[i];
+    if(!s.hidden && (s.kind || 'word') !== 'word') n += s.words.length;
+  }
+  return n;
+}
+function learnedSentence(){
+  var map = sentenceSlugs(), n = 0;
+  for(var k in state.kw){
+    if(!Object.prototype.hasOwnProperty.call(state.kw, k)) continue;
+    var r = state.kw[k];
+    if(!r || !r.l) continue;
+    var p = k.indexOf('#');
+    if(p > 0 && map[k.slice(0, p)]) n++;
+  }
+  return n;
+}
 /* 清空本专题：删掉本表所有词的学习状态。与其他专题共用的词会一起变回未学 */
 function resetWords(slug){
   var s = findWordSet(slug);
@@ -477,6 +508,9 @@ function resetWords(slug){
   for(var i=0;i<s.words.length;i++){
     var k = keyOf(slug, i);
     if(state.kw[k]){ delete state.kw[k]; n++; }
+    /* 难词本也一起清：否则重置后难词本里还留着「已经没学过」的词，
+       点进去复习反而给它们重新排期 */
+    if(state.hk[k]){ delete state.hk[k]; }
   }
   invalidateDone();
   saveState();
@@ -788,20 +822,24 @@ function renderHome(){
       doneB += apecChapDone(bk.bookId, c.cid);
     });
   });
-  var grandPct = pct(doneW+doneE+doneB, totalW+totalE+totalB);
-  /* 单词进度按「不同的词」算：同一个词在 3 个专题里只算 1 个，不会虚高 */
+  /* 单词进度按「不同的词」算：同一个词在 3 个专题里只算 1 个，不会虚高。
+     句子/短语表另算一份，一起进总进度——不然学了几百句口语，百分比一动不动 */
   var uniqW = uniqueWordTotal() || totalW;
   var doneU = learnedTotal();
-  grandPct = pct(doneU+doneE+doneB, uniqW+totalE+totalB);
+  var totalS = sentenceTotal(), doneS = learnedSentence();
+  var grandPct = pct(doneU+doneS+doneE+doneB, uniqW+totalS+totalE+totalB);
 
   var html = '';
   var nSets = 0;
   WORD_DATA.forEach(function(s){ if(!s.hidden) nSets++; });
   html += '<div class="hero"><h1>每天一点点，轻松说英语</h1>'
-       + '<p>' + nSets + ' 个词表专题 · ' + uniqW.toLocaleString() + ' 个不同单词 · ' + POD_DATA.length + ' 套音视频节目 · APEC 手册 ' + totalB + ' 条双语</p></div>';
+       + '<p>' + nSets + ' 个词表专题 · ' + uniqW.toLocaleString() + ' 个不同单词'
+       + (totalS ? ' · ' + totalS.toLocaleString() + ' 条口语/短语' : '')
+       + ' · ' + POD_DATA.length + ' 套音视频节目 · APEC 手册 ' + totalB + ' 条双语</p></div>';
 
   html += '<div class="overall"><span class="big">' + grandPct + '%</span>'
        + '<span class="meta">已掌握单词 ' + doneU.toLocaleString() + ' / ' + uniqW.toLocaleString()
+       + (totalS ? ' · 口语/短语 ' + doneS.toLocaleString() + ' / ' + totalS.toLocaleString() + ' 条' : '')
        + ' · 已听 ' + doneE + ' / ' + totalE + ' 集 · 手册 ' + doneB + ' / ' + totalB + ' 条</span>'
        + '<span class="pbar"><i style="width:' + grandPct + '%"></i></span></div>';
 
@@ -1675,10 +1713,11 @@ function collectStore(){
   return out;
 }
 function backupCounts(){
-  var c = { words:0, hard:0, diary:0, coachMsgs:0, mem:0 };
+  var c = { words:0, hard:0, diary:0, coachMsgs:0, mem:0, sent:0 };
   try{
     for(var k in state.kw){ if(Object.prototype.hasOwnProperty.call(state.kw,k) && state.kw[k] && state.kw[k].l) c.words++; }
     for(var h in state.hk){ if(Object.prototype.hasOwnProperty.call(state.hk,h) && state.hk[h]) c.hard++; }
+    c.sent = learnedSentence();
   }catch(e){}
   try{
     var w = JSON.parse(localStorage.getItem('qingxue_write_v1') || '[]');
@@ -1731,7 +1770,6 @@ function downloadText(text, fname){
 function saveFullBackupFile(){
   var text = JSON.stringify(buildFullBackup(), null, 2);
   var fname = '轻学英语备份-' + nowStamp() + '.json';
-  markBackedUp();
   if(window.showSaveFilePicker){
     window.showSaveFilePicker({ suggestedName: fname, types: [{ description: '备份文件', accept: { 'application/json': ['.json'] } }] })
       .then(function(handle){
@@ -1739,28 +1777,41 @@ function saveFullBackupFile(){
           return w.write(text).then(function(){ return w.close(); });
         });
       })
-      .then(function(){ toast('已保存：' + fname); })
+      .then(function(){ markBackedUp(); toast('已保存：' + fname); })
       .catch(function(err){
         // 用户主动取消才静默，其他失败一律退回浏览器下载
         if(err && err.name === 'AbortError') return;
         downloadText(text, fname);
+        markBackedUp();
         toast('已下载：' + fname);
       });
     return;
   }
   downloadText(text, fname);
+  markBackedUp();
   toast('已保存到手机：' + fname);
 }
 function copyFullBackup(){
-  markBackedUp();
   copyTextForBackup(JSON.stringify(buildFullBackup(), null, 2), '备份内容已生成', null);
+  markBackedUp();
 }
-function afterRestoreOk(msg){
+function afterRestoreOk(msg, delay){
   toast(msg || '恢复成功，正在刷新…');
-  setTimeout(function(){ location.reload(); }, 600);
+  setTimeout(function(){ location.reload(); }, delay || 600);
 }
+var _snapOk = true;
 function snapshotBeforeRestore(){
-  try{ localStorage.setItem(PRE_RESTORE_KEY, JSON.stringify(collectStore())); }catch(e){}
+  /* 返回是否真的存下了：存储快满时这一步会失败，
+     若默默失败，用户在「回滚」里会发现没有快照，那时数据已经被覆盖了 */
+  try{
+    localStorage.setItem(PRE_RESTORE_KEY, JSON.stringify(collectStore()));
+    _snapOk = true;
+    return true;
+  }catch(e){
+    try{ localStorage.removeItem(PRE_RESTORE_KEY); }catch(e2){}
+    _snapOk = false;
+    return false;
+  }
 }
 function applyFullBackup(o){
   if(!o || typeof o !== 'object' || Array.isArray(o)) return '文件内容不是有效的备份';
@@ -1802,6 +1853,10 @@ function restoreFromText(text){
   try{ o = JSON.parse(text); }catch(e){ toast('恢复失败：不是有效的备份文本'); return; }
   var err = applyFullBackup(o);
   if(err){ toast('恢复失败：' + err); return; }
+  if(!_snapOk){
+    afterRestoreOk('恢复成功，但当前数据快照没存下（空间不足），这次「回滚」用不了', 2600);
+    return;
+  }
   afterRestoreOk();
 }
 function pickRestoreFile(){
@@ -1817,7 +1872,7 @@ function pickRestoreFile(){
     var f = inp.files && inp.files[0];
     if(!f){ if(inp.parentNode) inp.parentNode.removeChild(inp); return; }
     var c = backupCounts();
-    if(!confirm('用「' + f.name + '」覆盖当前数据？\n\n当前：单词 ' + c.words + ' 条 · 日记 ' + c.diary + ' 篇 · 语伴对话 ' + c.coachMsgs + ' 条\n\n恢复前会自动存一份当前数据的快照，可在「更多方式 → 回滚」里找回。')) {
+    if(!confirm('用「' + f.name + '」覆盖当前数据？\n\n当前：已学 ' + c.words + ' 条（含口语/短语） · 日记 ' + c.diary + ' 篇 · 语伴对话 ' + c.coachMsgs + ' 条\n\n恢复前会自动存一份当前数据的快照，可在「更多方式 → 回滚」里找回。')) {
       if(inp.parentNode) inp.parentNode.removeChild(inp);
       return;
     }
@@ -1881,7 +1936,7 @@ function openBackupPanel(){
   mask.innerHTML = '<div class="tm-panel">'
     + '<div class="tm-title">💾 备份与恢复</div>'
     + '<div class="bk-grid">'
-    + '<div class="bk-line">当前：单词 <b>' + c.words + '</b> 条 · 日记 <b>' + c.diary + '</b> 篇 · 语伴对话 <b>' + c.coachMsgs + '</b> 条 · 记忆 <b>' + c.mem + '</b> 条' + (c.hard ? ' · 难词 <b>' + c.hard + '</b>' : '') + '</div>'
+    + '<div class="bk-line">当前：已学 <b>' + c.words + '</b> 条 · 口语/短语 <b>' + c.sent + '</b> 条 · 日记 <b>' + c.diary + '</b> 篇 · 语伴对话 <b>' + c.coachMsgs + '</b> 条 · 记忆 <b>' + c.mem + '</b> 条' + (c.hard ? ' · 难词 <b>' + c.hard + '</b>' : '') + '</div>'
     + '<div class="bk-line">上次备份：<b>' + (days === null ? '从未备份' : (days === 0 ? '今天' : days + ' 天前')) + '</b></div>'
     + '<div class="tm-hint">备份存成一个 .json 文件到手机本地：安卓进「下载 / Download」；iPhone 在弹出的「存储到文件」里选「我的 iPhone」任意目录。恢复时从同一个地方选这个文件，不需要任何第三方 App。</div>'
     + '</div>'
@@ -1949,6 +2004,7 @@ ssRestoreView();
   function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
   function pad(n){ return n<10 ? '0'+n : ''+n; }
   function load(){ try{ var a=JSON.parse(localStorage.getItem(KEY)); return Array.isArray(a)?a:[]; }catch(e){ return []; } }
+  /* 写不进去时抛出来，让调用方提示用户——否则存储满了会表现为「点保存没反应、内容没了」 */
   function save(a){ localStorage.setItem(KEY, JSON.stringify(a)); }
   function dateTitle(d){ var w=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']; return d.getFullYear()+'年'+(d.getMonth()+1)+'月'+d.getDate()+'日 · '+w[d.getDay()]; }
   function dateStamp(d){ return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+' '+pad(d.getHours())+':'+pad(d.getMinutes()); }
@@ -2013,7 +2069,13 @@ ssRestoreView();
       } else {
         list.push({ id:uid(), ts:Date.now(), title:dateTitle(new Date()), text:val, updated:dateStamp(new Date()) });
       }
-      save(list); mask.remove(); renderWrite();
+      try{ save(list); }
+      catch(e){
+        /* 存不下就别关弹窗，内容还在里面，用户可以自己复制走 */
+        toast('保存失败：手机浏览器存储空间不够了。请先备份，再删掉几篇旧日记');
+        return;
+      }
+      mask.remove(); renderWrite();
     };
   }
 
@@ -2068,12 +2130,15 @@ ssRestoreView();
     if(!text || !text.trim()) return;
     var list = load(), have = {}; list.forEach(function(e){ have[e.id]=1; });
     var added = 0;
+    var parsed = true;
     try{
       var data = JSON.parse(text);
       var arr = Array.isArray(data) ? data : (data.entries || []);
       arr.forEach(function(e){ if(e && e.id && !have[e.id]){ have[e.id]=1; list.push(e); added++; } });
-      save(list); renderWrite(); toast(added ? '导入成功 ' + added + ' 篇' : '没有新增的日记');
     }catch(err){
+      /* 不是 JSON，就按 Markdown 解析；注意只解析、不落盘，
+         免得保存失败被这一层 catch 当成「格式不对」再解析一次 */
+      parsed = false;
       var blocks = String(text).split(/\n-{3,}\s*\n/);
       blocks.forEach(function(b){
         var m = b.match(/^#\s+(.+?)\s*\n+(?:\n+)?([\s\S]*)$/);
@@ -2082,8 +2147,11 @@ ssRestoreView();
         var id = uid(); if(have[id]) return; have[id]=1;
         list.push({ id:id, ts:Date.now(), title:m[1].trim(), text:body, updated:dateStamp(new Date()) }); added++;
       });
-      save(list); renderWrite(); toast(added ? '导入成功 ' + added + ' 篇' : '没有识别到可导入的日记');
     }
+    try{ save(list); }
+    catch(e){ toast('导入失败：手机浏览器存储空间不够了，请先备份再清理'); return; }
+    renderWrite();
+    toast(added ? ('导入成功 ' + added + ' 篇') : (parsed ? '没有新增的日记' : '没有识别到可导入的日记'));
   }
 
   function copyWriteText(){
@@ -2168,20 +2236,27 @@ ssRestoreView();
   /* ---- 生活话题（基础） ---- */
   var LIFE_TOPICS = ['通用日常','旅行出差','点餐美食','工作商务','健康养生','日常闲聊','情感共情','购物休闲','家庭孩子'];
 
-  /* ---- 主题话题（分组成标签，可多选） ---- */
+  /* ---- 主题话题（分组成标签，可多选） ----
+     原则：每个标签都是语料里真实存在的话题名（CORPUS / DIALOGUE_REG / 走遍美国），
+     组名只做标题、不再重复做成标签；选中即直接命中语料，不依赖隐藏映射。 */
   var THEME_GROUPS = [
-    { name:'成长·自我',   topics:['成长·自我','个人成长','职业规划','女性的成长'] },
-    { name:'人生·价值观', topics:['人生·价值观','人生价值观探讨','生命的意义'] },
-    { name:'健康·运动·养生', topics:['健康·运动·养生','瑜伽','太极·八段锦·少林功夫'] },
-    { name:'家庭·育儿',   topics:['家庭·育儿','亲子关系','亲密关系','育儿观对比'] },
-    { name:'旅行·出国·见闻', topics:['旅行·出国·见闻','国外风景与美食','出国场景'] },
-    { name:'阅读·休闲·生活', topics:['阅读·休闲·生活'] },
-    { name:'深圳',        topics:['深圳','深圳历史发展','APEC 话题','APEC 官方手册'] },
-    { name:'外贸·牙科',   topics:['外贸客户开发实景','牙科行业与前景','合作可能性探讨','牙科技术术语','展会与客户接待','报价谈判与交期','货运与清关','科技与AI'] },
-    { name:'走遍美国',    topics:['走遍美国'] },
-    { name:'真实对白·新', topics:['商务财报电话会','社交礼仪','身心成长','美食旅行实拍','真人闲聊对话','老友记','摩登家庭','生活大爆炸','点餐美食补充','出国过境英语'] }
+    { name:'成长 · 事业',  topics:['个人成长','职业规划','创业与事业','财富积累与规划','认知提升的重要性','女性的成长'] },
+    { name:'人生 · 价值观', topics:['人生价值观探讨','生命的意义','如何做一个正确的人','人生不同与生命追求'] },
+    { name:'运动 · 养生',  topics:['运动对生命健康的意义','中国养生文化','瑜伽','户外Hiking','太极·八段锦·少林功夫'] },
+    { name:'家庭 · 育儿',  topics:['亲子关系','亲密关系','育儿观对比','育儿与教育'] },
+    { name:'旅行 · 见闻',  topics:['旅行对人的意义','扩大生命边界','出国场景','国外风景与美食','中国人对外国人的看法','外国人对中国的看法'] },
+    { name:'阅读 · 生活',  topics:['阅读与电影','日常生活场景'] },
+    { name:'深圳',        topics:['深圳自然','深圳人文美食','深圳历史发展'] },
+    { name:'APEC（深圳）', topics:['APEC 话题','APEC 官方手册'] },
+    { name:'外贸 · 牙科',  topics:['外贸客户开发实景','牙科行业与前景','合作可能性探讨','牙科技术术语','展会与客户接待','报价谈判与交期','货运与清关'] },
+    { name:'科技 · AI',   topics:['科技与AI'] },
+    { name:'剧集 · 真实对白', topics:['走遍美国','老友记','摩登家庭','生活大爆炸','真人闲聊对话','社交礼仪','身心成长','美食旅行实拍','商务财报电话会','点餐美食补充','出国过境英语'] }
   ];
-  /* 大标签 → 子话题：选中大标签即同时选中其全部子话题（折中合并：大标签 + 保留高频子话题单独选） */
+  /* 所有真实主题话题的平铺列表（场景匹配用） */
+  var THEME_FLAT = [];
+  THEME_GROUPS.forEach(function(g){ g.topics.forEach(function(t){ if(THEME_FLAT.indexOf(t) < 0) THEME_FLAT.push(t); }); });
+  /* 大标签 → 子话题：仅用于兼容旧存档（以前版本会保存「成长·自我」这类组名作为选中话题），
+     检索时仍能把它们展开成真实话题；新界面不再出现这些大标签。 */
   var BIG_TAG = {
     '成长·自我': ['个人成长','职业规划','财富积累与规划','创业与事业','认知提升的重要性','女性的成长'],
     '人生·价值观': ['人生价值观探讨','生命的意义','如何做一个正确的人','人生不同与生命追求'],
@@ -2226,7 +2301,8 @@ ssRestoreView();
     '职业意义':'职业规划','人际关系':'情感共情','压力与情绪':'情感共情','关系沟通':'情感共情',
     '习惯养成':'个人成长','专注与效率':'认知提升的重要性','养生与睡眠':'健康养生'
   };
-  /* 走遍美国：按集号（1-26）→ 主题标签，未列出的默认『日常闲聊』 */
+  /* 走遍美国：按「集号」1-26 → 主题标签，未列出的默认『日常闲聊』
+     注意：数据里 n 是全局段号（1-78，每集 3 幕），ep 才是集号（1-26），必须用 ep。 */
   var FA_TITLE_MAP = {
     1:'日常闲聊', 2:'情感共情', 3:'家庭孩子', 4:'点餐美食', 5:'家庭孩子', 6:'点餐美食',
     7:'日常闲聊', 8:'健康养生', 9:'日常闲聊', 10:'日常闲聊', 11:'日常生活场景', 12:'日常闲聊',
@@ -2234,8 +2310,18 @@ ssRestoreView();
     19:'情感共情', 20:'家庭孩子', 21:'个人成长', 22:'职业规划', 23:'日常闲聊', 24:'情感共情',
     25:'日常闲聊', 26:'工作商务'
   };
-  /* 外贸/生意类话题统一接入 Earnings Call 语料（加载映射 + 索引目标共用一份列表） */
-  var EARN_TOPICS = ['工作商务','商务财报电话会','外贸客户开发实景','APEC 话题','牙科行业与前景','合作可能性探讨','展会与客户接待','报价谈判与交期','货运与清关','科技与AI'];
+  /* 外贸/生意类话题接入财报语料：只挂真正对得上的 6 个话题（科技与AI / 牙科 / APEC / 展会 有自己的专属语料，不再被财报套话占位） */
+  var EARN_TOPICS = ['工作商务','商务财报电话会','外贸客户开发实景','合作可能性探讨','报价谈判与交期','货运与清关'];
+  /* 财报语料自带的 7 个细分标签 → 对应话题（以前是整份复制到所有商务话题，导致「科技与AI」里全是财报套话） */
+  var EARN_TAG_MAP = {
+    '工作商务':'工作商务',
+    '财务汇报数字':'商务财报电话会',
+    '价格与成本':'报价谈判与交期',
+    '供应链与交期':'货运与清关',
+    '市场与客户':'外贸客户开发实景',
+    '合作可能性探讨':'合作可能性探讨',
+    '战略与竞争':'合作可能性探讨'
+  };
   /* 源文件 → 可贡献的标签（选中/自动命中这些标签时加载对应源，加载后索引归并） */
   var CROSS_SRC = [
     { file:'./englishpod_dialogues.js', topics:['通用日常','旅行出差','点餐美食','工作商务','健康养生','日常闲聊','情感共情','购物休闲','家庭孩子'] },
@@ -2244,7 +2330,7 @@ ssRestoreView();
     { file:'./earnings_dialogues.js', topics: EARN_TOPICS },
     { file:'./hotwater_dialogues.js', topics:['社交礼仪','日常闲聊','情感共情','个人成长'] },
     { file:'./onpurpose_dialogues.js', topics:['身心成长','个人成长','认知提升的重要性','情感共情','健康养生','职业规划','人生价值观探讨','生命的意义'] },
-    { file:'./video_dialogues.js', topics:['点餐美食','旅行出差','美食旅行实拍','国外风景食物与育儿观','旅行对人的意义','扩大生命边界'] },
+    { file:'./video_dialogues.js', topics:['点餐美食','旅行出差','美食旅行实拍','国外风景与美食','旅行对人的意义','扩大生命边界'] },
     { file:'./rec_dialogues.js', topics:['日常闲聊','出国场景','购物休闲','社交礼仪','旅行出差','点餐美食','情感共情'] },
     { file:'./docs_dialogues.js', topics:['点餐美食','出国场景','出国过境英语','点餐美食补充','旅行出差'] }
   ];
@@ -2520,7 +2606,7 @@ ssRestoreView();
       Object.keys(FA_DLG).forEach(function(k){
         var e = FA_DLG[k];
         if(!e || !e.lines || !e.lines.length) return;
-        var t = FA_TITLE_MAP[e.n] || '日常闲聊';
+        var t = FA_TITLE_MAP[e.ep] || '日常闲聊';
         pushIndex(t, '走遍美国', '走遍美国·' + (e.title || k), e.lines.map(function(l){ return { en: l.en, cn: l.cn }; }));
       });
     }
@@ -2530,10 +2616,15 @@ ssRestoreView();
       ['老友记','摩登家庭','生活大爆炸'].forEach(function(show){
         var d = SIT.topics[show];
         if(!d || !d.sentences) return;
-        d.sentences.forEach(function(s){ pushIndex(TAG_MAP[s.tag] || '日常闲聊', show, show, [{ en: s.en, cn: s.cn }]); });
+        d.sentences.forEach(function(s){
+          var tp = TAG_MAP[s.tag] || '日常闲聊';
+          pushIndex(tp, show, show, [{ en: s.en, cn: s.cn }]);
+          /* 除了按句子 tag 分流，也留一份到剧名本身：这样选「老友记」时也能混入别的来源 */
+          if(tp !== show) pushIndex(show, show, show, [{ en: s.en, cn: s.cn }]);
+        });
       });
     }
-    function mini(gvar, defTopic, labelFn, family){
+    function mini(gvar, defTopic, ownTopic, labelFn, family){
       var D = window[gvar];
       if(!D || !D.topics || _crossBuilt[gvar]) return;
       _crossBuilt[gvar] = 1;
@@ -2542,28 +2633,36 @@ ssRestoreView();
         (d.sentences || []).forEach(function(s){
           var tp = TAG_MAP[s.tag] || defTopic;
           pushIndex(tp, family, labelFn(s, t), [{ en: s.en, cn: s.cn }]);
+          /* 同时留一份到该源自己的标签（如「身心成长」「美食旅行实拍」「真人闲聊对话」），
+             否则这些标签在跨源索引里是 0 条，选中时只能听到单一来源 */
+          if(ownTopic && ownTopic !== tp) pushIndex(ownTopic, family, labelFn(s, t), [{ en: s.en, cn: s.cn }]);
         });
         (d.phrases || []).forEach(function(p){
           pushIndex(defTopic, family, labelFn(p, t), [{ en: p.phrase, cn: p.meaning }]);
+          if(ownTopic && ownTopic !== defTopic) pushIndex(ownTopic, family, labelFn(p, t), [{ en: p.phrase, cn: p.meaning }]);
         });
       });
     }
-    function miniMulti(gvar, topics, labelFn, family){
-      var D = window[gvar];
-      if(!D || !D.topics || _crossBuilt[gvar]) return;
-      _crossBuilt[gvar] = 1;
-      Object.keys(D.topics).forEach(function(t){
-        var d = D.topics[t];
-        var items = (d.sentences || []).map(function(s){ return { en: s.en, cn: s.cn }; })
-          .concat((d.phrases || []).map(function(p){ return { en: p.phrase, cn: p.meaning }; }));
-        topics.forEach(function(tp){ pushIndex(tp, family, labelFn(), items); });
+    /* 财报语料：按句子自带的细分 tag 投放，不再整份复制到所有商务话题 */
+    var EARN = window.EARNINGS_DIALOGUES;
+    if(EARN && EARN.topics && !_crossBuilt.earn){
+      _crossBuilt.earn = 1;
+      Object.keys(EARN.topics).forEach(function(k){
+        var d = EARN.topics[k];
+        (d.sentences || []).forEach(function(s){
+          var tp = EARN_TAG_MAP[s.tag];
+          if(!tp) return;   /* 细分不到的句子不硬塞，宁可不用也不塞错话题 */
+          pushIndex(tp, 'Earnings Call', 'Earnings Call·' + (s.tag || '对白'), [{ en: s.en, cn: s.cn }]);
+        });
+        (d.phrases || []).forEach(function(p){
+          pushIndex('商务财报电话会', 'Earnings Call', 'Earnings Call·术语', [{ en: p.phrase, cn: p.meaning }]);
+        });
       });
     }
-    miniMulti('EARNINGS_DIALOGUES', EARN_TOPICS, function(){ return 'Earnings Call'; }, 'Earnings Call');
-    mini('HOTWATER_DIALOGUES', '社交礼仪', function(s){ return '社交礼仪·' + (s.tag || '对白'); }, '社交礼仪');
-    mini('ONPURPOSE_DIALOGUES', '身心成长', function(s){ return 'On Purpose·' + (s.tag || '对白'); }, 'On Purpose');
-    mini('VIDEO_DIALOGUES', '美食旅行实拍', function(s){ return '美食实拍·' + (s.tag || '对白'); }, '美食实拍');
-    mini('REC_DIALOGUES', '日常闲聊', function(s){ return '真人闲聊·' + (s.tag || '对白'); }, '真人闲聊');
+    mini('HOTWATER_DIALOGUES', '社交礼仪', '社交礼仪', function(s){ return '社交礼仪·' + (s.tag || '对白'); }, '社交礼仪');
+    mini('ONPURPOSE_DIALOGUES', '身心成长', '身心成长', function(s){ return 'On Purpose·' + (s.tag || '对白'); }, 'On Purpose');
+    mini('VIDEO_DIALOGUES', '美食旅行实拍', '美食旅行实拍', function(s){ return '美食实拍·' + (s.tag || '对白'); }, '美食实拍');
+    mini('REC_DIALOGUES', '日常闲聊', '真人闲聊对话', function(s){ return '真人闲聊·' + (s.tag || '对白'); }, '真人闲聊');
     var DOCS = window.DOCS_DIALOGUES;
     if(DOCS && DOCS.topics && !_crossBuilt.docs){
       _crossBuilt.docs = 1;
@@ -2571,13 +2670,19 @@ ssRestoreView();
       if(od && od.sentences){
         od.sentences.forEach(function(s){
           var tp = TAG_MAP[s.tag] || '出国场景';
-          pushIndex(tp, '过境英语', '过境英语·' + (s.tag || ''), [{ en: s.en, cn: s.cn }]);
-          pushIndex('旅行出差', '过境英语', '过境英语·' + (s.tag || ''), [{ en: s.en, cn: s.cn }]);
+          var item = [{ en: s.en, cn: s.cn }];
+          pushIndex(tp, '过境英语', '过境英语·' + (s.tag || ''), item);
+          pushIndex('旅行出差', '过境英语', '过境英语·' + (s.tag || ''), item);
+          if(tp !== '出国过境英语') pushIndex('出国过境英语', '过境英语', '过境英语·' + (s.tag || ''), item);
         });
       }
       var dp = DOCS.topics['点餐美食补充'];
       if(dp && dp.phrases){
-        dp.phrases.forEach(function(p){ pushIndex('点餐美食', '点餐补充', '点餐补充', [{ en: p.phrase, cn: p.meaning }]); });
+        dp.phrases.forEach(function(p){
+          var item = [{ en: p.phrase, cn: p.meaning }];
+          pushIndex('点餐美食', '点餐补充', '点餐补充', item);
+          pushIndex('点餐美食补充', '点餐补充', '点餐补充', item);
+        });
       }
     }
     return _crossIndex;
@@ -2616,6 +2721,30 @@ ssRestoreView();
     });
     return out.length ? out : ['通用日常'];
   }
+  /* ---- 注入账本与已学索引 ----
+     _injSeq / _injTurn：LRU 轮转账本——每句语料记录「上一次被注入的轮次」，
+     抽选时最久未用的优先；只为跨轮去重，刷新即清空，不需要持久化。
+     已学索引：把学习模块里标记过「已学」的句子/短语（spokens / groups 两张表，
+     键为 slug#idx）的文本收进集合；语伴检索时硬过滤——学过的不再出现，与你的既定原则对齐。 */
+  var _injSeq = {}, _injTurn = 0;
+  var _learnedTexts = null;
+  function invalidateLearnedTexts(){ _learnedTexts = null; }
+  function buildLearnedTextIndex(){
+    if(_learnedTexts) return _learnedTexts;
+    var set = {};
+    if(WORD_DATA){
+      WORD_DATA.forEach(function(t){
+        var kind = t.kind || 'word';
+        if(kind !== 'sentence' && kind !== 'phrase') return;
+        (t.words || []).forEach(function(w, i){
+          var r = state.kw[t.slug + '#' + i];
+          if(r && r.l && w && w[0]) set[wordKey(w[0])] = 1;
+        });
+      });
+    }
+    _learnedTexts = set;
+    return set;
+  }
   function coachPickTopics(userMsg){
     if(state.auto){
       var m = (userMsg||'').toLowerCase(), best='通用日常', score=0;
@@ -2635,6 +2764,7 @@ ssRestoreView();
     var C = window.CORPUS;
     if(!C || !C.topics) return { hits:'', tip:null };
     buildTopicIndex();
+    var learnIdx = buildLearnedTextIndex();   /* 已学文本集合：注入与小卡片都跳过 */
     var EP_DLG = window.ENGLISHPOD_DIALOGUES || null;
     var FA_DLG = window.FAMILYALBUM_DIALOGUES || null;
     var chosen = coachPickTopics(userMsg);
@@ -2650,10 +2780,10 @@ ssRestoreView();
       if(used[name]) return; used[name] = 1;
       var data = C.topics[name] || C.topics['通用日常'];
       if(!data) return;
-      data.sentences.forEach(function(s){ lines.push('"' + s.en + '" — ' + s.cn); });
-      data.phrases.forEach(function(p){ lines.push('"' + p.phrase + '" — ' + p.meaning); });
+      data.sentences.forEach(function(s){ if(!learnIdx[wordKey(s.en)]) lines.push('"' + s.en + '" — ' + s.cn); });
+      data.phrases.forEach(function(p){ if(!learnIdx[wordKey(p.phrase)]) lines.push('"' + p.phrase + '" — ' + p.meaning); });
       if(!tip){
-        var sentPool = data.sentences.filter(function(s){ return !state.tipSeen[s.en]; });
+        var sentPool = data.sentences.filter(function(s){ return !state.tipSeen[s.en] && !learnIdx[wordKey(s.en)]; });
         if(sentPool.length){ tip = sentPool[Math.floor(Math.random()*sentPool.length)]; state.tipSeen[tip.en]=1; }
         else if(data.sentences.length){ tip = data.sentences[Math.floor(Math.random()*data.sentences.length)]; }
       }
@@ -2729,14 +2859,28 @@ ssRestoreView();
       crossLines(t, priority); /* 第二阶段：把已加载源里归并到该话题的真实对白一并注入 */
     });
     if(!lines.length && !priority.length){ useData('通用日常'); }
-    var seenL = {}, chosenLines = [];
-    priority.forEach(function(l){ if(!seenL[l]){ seenL[l]=1; chosenLines.push(l); } });
-    if(chosenLines.length > 8){ chosenLines = chosenLines.slice(0, 8); }
-    var pool = lines.slice();
-    while(chosenLines.length < 8 && pool.length){ chosenLines.push(pool.splice(Math.floor(Math.random()*pool.length),1)[0]); }
-    while(chosenLines.length < 8 && chosenLines.length < chosenLines.concat(priority.filter(function(l){return !seenL[l];})).length){
-      var extra = priority.filter(function(l){ return !seenL[l]; })[0];
-      if(!extra) break; seenL[extra]=1; chosenLines.push(extra);
+    /* 最终抽选：已学句子永不注入；其余按 LRU（最久未注入优先）取 8 条——
+       池子大时全程不重样；池子小时均匀轮转重现，间隔重复比集中重复更利于记忆 */
+    var seenL = {}, chosenLines = [], turn = ++_injTurn;
+    priority.forEach(function(l){
+      if(seenL[l]) return; seenL[l] = 1;
+      if(learnIdx[wordKey(l)]) return;
+      chosenLines.push(l); _injSeq[wordKey(l)] = turn;
+    });
+    if(chosenLines.length < 8){
+      var cand = [];
+      lines.forEach(function(l){
+        if(seenL[l] || learnIdx[wordKey(l)]) return;
+        seenL[l] = 1; cand.push(l);
+      });
+      cand.sort(function(a, b){ return (_injSeq[wordKey(a)] || 0) - (_injSeq[wordKey(b)] || 0); });
+      var head = cand.slice(0, Math.max(24, (8 - chosenLines.length) * 3));
+      for(var i = head.length - 1; i > 0; i--){
+        var j = Math.floor(Math.random() * (i + 1)), t = head[i]; head[i] = head[j]; head[j] = t;
+      }
+      for(var k = 0; k < head.length && chosenLines.length < 8; k++){
+        chosenLines.push(head[k]); _injSeq[wordKey(head[k])] = turn;
+      }
     }
     return { hits: 'Idiomatic expressions to weave in naturally (from a daily-English corpus):\n' + chosenLines.join('\n'), tip: tip, topics: chosen };
   }
@@ -3337,20 +3481,32 @@ ssRestoreView();
       signal: ctrl.signal
     }).then(function(res){
       if(!res.ok){ return res.text().then(function(){ throw new Error('HTTP ' + res.status); }); }
-      var reader = res.body.getReader(), dec = new TextDecoder(), acc = '';
+      var reader = res.body.getReader(), dec = new TextDecoder(), acc = '', buf = '';
+      /* 网络分片可能把一条 data: 行切成两半，必须留着残行等下一片拼上，
+         否则那条 JSON 解析失败被丢掉，表现为点评文字缺词 */
+      function eat(text){
+        var chunk = buf + text;
+        var nl = chunk.lastIndexOf('\n');
+        if(nl < 0){ buf = chunk; return; }
+        buf = chunk.slice(nl + 1);
+        chunk.slice(0, nl).split('\n').forEach(function(line){
+          if(line.indexOf('data:') !== 0) return;
+          var payload = line.slice(5).trim();
+          if(!payload || payload === '[DONE]') return;
+          try{
+            var d = JSON.parse(payload).choices[0].delta.content;
+            if(d){ acc += d; setReviewText(acc); }
+          }catch(_){}
+        });
+      }
       function pump(){
         return reader.read().then(function(r){
-          if(r.done){ setReviewText(acc || '（没有返回内容）'); return; }
-          var chunk = dec.decode(r.value, {stream:true});
-          chunk.split('\n').forEach(function(line){
-            if(line.indexOf('data:') !== 0) return;
-            var payload = line.slice(5).trim();
-            if(!payload || payload === '[DONE]') return;
-            try{
-              var d = JSON.parse(payload).choices[0].delta.content;
-              if(d){ acc += d; setReviewText(acc); }
-            }catch(_){}
-          });
+          if(r.done){
+            if(buf) eat('\n');            /* 收尾：最后一行没有换行符 */
+            setReviewText(acc || '（没有返回内容）');
+            return;
+          }
+          eat(dec.decode(r.value, {stream:true}));
           return pump();
         });
       }
@@ -3445,12 +3601,37 @@ ssRestoreView();
       signal: abortCtrl.signal
     }).then(function(res){
       if(!res.ok){ return res.text().then(function(t){ throw new Error('HTTP ' + res.status + (t ? ' · ' + t.slice(0,200) : '')); }); }
-      var reader = res.body.getReader(), dec = new TextDecoder(), aiText = '';
+      var reader = res.body.getReader(), dec = new TextDecoder(), aiText = '', buf = '';
+      /* 见上：网络分片可能切断一条 data: 行，残行留到下一片再拼 */
+      function eat(text){
+        var chunk = buf + text;
+        var nl = chunk.lastIndexOf('\n');
+        if(nl < 0){ buf = chunk; return; }
+        buf = chunk.slice(nl + 1);
+        chunk.slice(0, nl).split('\n').forEach(function(line){
+          if(line.indexOf('data:') !== 0) return;
+          var payload = line.slice(5).trim();
+          if(!payload || payload === '[DONE]') return;
+          try{
+            var delta = JSON.parse(payload).choices[0].delta.content;
+            if(delta){ aiText += delta; aiBody.textContent = aiText; coachAutoScroll(); }
+          }catch(_){}
+        });
+      }
       function pump(){
         return reader.read().then(function(r){
           if(myReqId !== requestId) { return; }  // 角色已切换，丢弃旧请求
           if(r.done){
+            if(buf) eat('\n');
             aiBody.classList.remove('c-stream');
+            /* 一个字都没收到：可能是额度用完/接口异常但回了 200，
+               不能留个空气泡什么都不说 */
+            if(!aiText){
+              aiBody.textContent = '（没收到回复：可能是今天的免费额度用完了，也可能是网络中断。晚点再试一次）';
+              aiBody.classList.add('c-fail');
+              aiBusy = false;
+              return;
+            }
             aiBody.textContent = aiText;
             state.history.push({role:'assistant', content:aiText});
             lastAIText = aiText;
@@ -3461,18 +3642,7 @@ ssRestoreView();
             });
             return;
           }
-          var chunk = dec.decode(r.value, {stream:true});
-          chunk.split('\n').forEach(function(line){
-            if(line.indexOf('data:') === 0){
-              var payload = line.slice(5).trim();
-              if(payload && payload !== '[DONE]'){
-                try{
-                  var delta = JSON.parse(payload).choices[0].delta.content;
-                  if(delta){ aiText += delta; aiBody.textContent = aiText; coachAutoScroll(); }
-                }catch(_){}
-              }
-            }
-          });
+          eat(dec.decode(r.value, {stream:true}));
           return pump();
         });
       }
@@ -3619,7 +3789,18 @@ ssRestoreView();
     // 大标签小标签一视同仁：点哪个选哪个，不自动带出子话题，不强制保留
     var idx = state.topics.indexOf(t);
     if(idx >= 0){ state.topics.splice(idx,1); }
-    else { state.topics.push(t); ensureDialogue([t]).then(updateDialogueStatus); }
+    else {
+      state.topics.push(t);
+      /* 勾了话题就退出自动匹配：自动模式下 coachPickTopics 只按关键词挑 1 个话题，
+         完全忽略勾选，用户会以为"选了没用" */
+      if(state.auto){
+        state.auto = false;
+        var ab = document.getElementById('coachAuto');
+        if(ab){ ab.classList.remove('active'); ab.textContent = '📌 手动选话题'; }
+        toast('已切到手动选话题：勾选的话题决定注入的语料');
+      }
+      ensureDialogue([t]).then(updateDialogueStatus);
+    }
     syncTopicChips();
     persistSession();
   }
@@ -3690,7 +3871,7 @@ ssRestoreView();
       (TOPIC_KW[t] || []).forEach(function(k){ if(kw.indexOf(k.toLowerCase()) >= 0) score++; });
       if(score > 0) hits.push({ t: t, s: score });
     });
-    LIFE_TOPICS.concat(Object.keys(BIG_TAG), THEME_GROUPS.map(function(g){ return g.name; })).forEach(function(t){
+    LIFE_TOPICS.concat(THEME_FLAT, Object.keys(BIG_TAG)).forEach(function(t){
       if(scene.indexOf(t) >= 0) hits.push({ t: t, s: 2 });
     });
     hits.sort(function(a,b){ return b.s - a.s; });
@@ -4154,8 +4335,9 @@ ssRestoreView();
       + '.cbtn{padding:9px 14px;border-radius:10px;background:var(--accent);color:#fff;font-weight:600;cursor:pointer;white-space:nowrap;border:none}'
       + '.cbtn.active{background:var(--danger)}'
       + '.cbtn-ghost{background:var(--surface);color:var(--ink);border:1px solid var(--hair)}'
-      + '.tgroup{margin-bottom:8px}'
-      + '.tgroup-name{font-size:11px;color:var(--faint);font-weight:600;margin:6px 0 4px;letter-spacing:.4px}'
+      + '.tgroup{padding:9px 0 5px;border-top:1px dashed var(--hair)}'
+      + '.tgroup-first{border-top:none;padding-top:2px}'
+      + '.tgroup-name{font-size:12px;color:var(--muted);font-weight:700;margin:0 0 7px;letter-spacing:.6px}'
       + '.ctopic-row{display:flex;flex-wrap:wrap;gap:6px}'
       + '.ctopic{padding:5px 11px;border-radius:999px;border:1px solid var(--hair);background:var(--surface);font-size:12.5px;color:var(--muted);cursor:pointer;transition:.12s}'
       + '.ctopic.rec{box-shadow:inset 0 0 0 1px var(--accent-soft)}'
@@ -4177,6 +4359,7 @@ ssRestoreView();
       + '.chint-en{font-weight:600}'
       + '.chint-cn{color:var(--muted);font-size:12px;margin-top:2px}'
       + '.c-stream::after{content:"▍";animation:blink 1s steps(1) infinite}'
+      + '.c-fail{color:#9a3412;background:#FEF3E7 !important;border:1px dashed #E8B48A}'
       + '@keyframes blink{50%{opacity:0}}'
       + '.coach-voice{margin:0;padding:8px 12px;background:var(--accent-soft);color:var(--ink);border-radius:8px;font-size:13px;min-height:20px;display:none}'
       + '.coach-voice.on{display:block}'
@@ -4222,7 +4405,7 @@ ssRestoreView();
       +     (isMemoryless(state.role) ? '' : '<button class="cbtn cbtn-ghost" id="coachRel">📋 关系档案</button>')
       +     '<button class="cbtn cbtn-ghost" id="coachVoicePicker">🎙️ 音色</button>'
       +   '</div>'
-      +   '<div class="tgroup"><div class="tgroup-name">生活话题</div><div class="ctopic-row">' + lifeHtml + '</div></div>'
+      +   '<div class="tgroup tgroup-first"><div class="tgroup-name">生活话题</div><div class="ctopic-row">' + lifeHtml + '</div></div>'
       +   '<div id="coachTopics">' + buildTopicGroups(state.role) + '</div>'
       +   '<div class="tgroup"><div class="tgroup-name">EnglishPod 场景</div><div class="cscene-search"><input id="sceneFilter" placeholder="搜索 365 个场景（如 Difficult Customer / hotel / job）" /><div class="ctopic-row" id="sceneChips">' + buildSceneChips('').html + '</div></div></div>'
       +   '<div class="coach-loaded" id="coachLoaded"></div>'
@@ -4311,6 +4494,12 @@ ssRestoreView();
     indexFams: function(t){ var e = _crossIndex[t]; return e ? Object.keys(e.fam).sort() : []; },
     indexSample: function(t, n){ return (_crossIndex[t] ? _crossIndex[t].list : []).slice(0, n || 8).map(function(it){ return '(' + it.label + ') ' + it.en; }); },
     indexTopics: function(){ return Object.keys(_crossIndex).sort(); },
+    /* 每个来源族在各话题下实际入索引的条数（审计语料归属用，只读） */
+    indexDump: function(){
+      var out = {};
+      Object.keys(_crossIndex).forEach(function(t){ out[t] = JSON.parse(JSON.stringify(_crossIndex[t].fam)); });
+      return out;
+    },
     loaded: loadedSet,
     /* 手动触发一次朗读（排查音色用）：默认读当前语伴，也可传 voiceId 临时指定 */
     say: function(t){ return coachSpeak(t || 'Voice test.', function(){}); },
@@ -4372,11 +4561,29 @@ function renderBootSplash(){
     retried = true;
     // 网络抖动重试一次；仍失败则提示
     load().catch(function(){
-      WORD_DATA = [];
-      render();
-      setTimeout(function(){
-        toast('词库加载失败：请检查网络后刷新；需通过 http(s) 网址访问（不能直接双击打开文件）');
-      }, 500);
+      /* 不把首页渲染成空表：那样看起来像「词表全没了」，而且没地方点。
+         给一个明确的错误页 + 重试按钮，重试就重新拉一次 words.json */
+      WORD_DATA = null;
+      var app = document.getElementById('app');
+      if(app){
+        app.innerHTML = '<div class="boot-splash" style="padding:48px 20px;text-align:center;color:#5B6B6C;font-size:15px;line-height:1.7;">'
+          + '<div style="font-size:38px;margin-bottom:12px;">📡</div>'
+          + '<strong style="color:#17312f;">词库没加载成功</strong><br>'
+          + '<span style="font-size:13px;">请先确认网络正常，再点下面的按钮重试。<br>'
+          + '如果一直失败：需通过 http(s) 网址访问（不能双击打开本地文件）。</span>'
+          + '<div style="margin-top:18px;"><button id="bootRetry" style="padding:10px 26px;border:0;border-radius:10px;background:#0F766E;color:#fff;font-size:15px;">重新加载</button></div>'
+          + '</div>';
+        var rb = document.getElementById('bootRetry');
+        if(rb) rb.onclick = function(){
+          rb.disabled = true;
+          rb.textContent = '正在重新加载…';
+          load().catch(function(){
+            rb.disabled = false;
+            rb.textContent = '还是失败，再试一次';
+          });
+        };
+      }
+      toast('词库加载失败：请检查网络；需通过 http(s) 网址访问（不能直接双击打开文件）');
     });
   });
 })();

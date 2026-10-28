@@ -3,8 +3,10 @@
    - HTML：network-first（先拿新版，断网才用缓存）→ 不会出现"改了没生效"
    - 静态资源（js/png/webmanifest）：stale-while-revalidate → 秒开 + 后台更新
    - 跨域（Cloudflare Worker 对话/语音）：不拦截，直接放行
-   升级方式：改 CACHE 版本号即可清掉旧缓存。 */
-var CACHE = 'qingxue-v10';
+   升级方式：改 CACHE 版本号即可清掉旧缓存。
+   注意：words.json 走的是 stale-while-revalidate，改了词库文件必须同时把 CACHE 版本号 +1，
+        否则用户第一次打开拿到的还是旧词库（要第二次打开才更新）。 */
+var CACHE = 'qingxue-v13';
 var PRECACHE = ['./', './index.html', './words.json', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 
 self.addEventListener('install', function(e){

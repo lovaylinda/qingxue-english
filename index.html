@@ -2811,6 +2811,7 @@ ssRestoreView();
     if(window.CORPUS) return Promise.resolve(true);
     if(_corpusPromise) return _corpusPromise;
     _corpusPromise = loadScript('./corpus_topic.js').then(function(){ return !!window.CORPUS; })
+      .then(function(ok){ try{ loadScript('./biz_corpus.js'); }catch(e){} return ok; })
       .catch(function(e){ _corpusPromise = null; console.warn('corpus load failed:', e && e.message); return false; });
     return _corpusPromise;
   }
@@ -3279,6 +3280,32 @@ ssRestoreView();
         var sentPool = data.sentences.filter(function(s){ return !state.tipSeen[s.en]; });
         if(sentPool.length){ tip = sentPool[Math.floor(Math.random()*sentPool.length)]; state.tipSeen[tip.en]=1; }
         else { tip = data.sentences[Math.floor(Math.random()*data.sentences.length)]; }
+      }
+    }
+    /* 商务语料（biz_corpus.js，186 条关键表达）：选了工作商务类话题，
+       或消息里出现商务关键词（中英都认）时注入，最多 3 条、占 8 个名额里的前 3。
+       优先取和消息沾边的，不够随机补；LRU 去重由下方统一处理，全程不重样。 */
+    if(window.BIZ_CORPUS && window.BIZ_CORPUS.length){
+      var bizOn = chosen.some(function(t){ return /工作|商务|职场|面试/.test(t); });
+      var msgEn = (userMsg || '').toLowerCase().match(/[a-z]{3,}/g) || [];
+      var BIZ_CN = /报价|价格|交期|交货|发货|订单|催|货款|发票|样品|会议|改期|面试|道歉|邮件|电话|客户|工厂|谈判|投诉|下单|合同|出口/;
+      var cnHit = BIZ_CN.test(userMsg || '');
+      if(bizOn || cnHit){
+        var bizHit = [], bizOther = [];
+        window.BIZ_CORPUS.forEach(function(o){
+          var blob = (o.en + ' ' + o.cn + ' ' + o.tag).toLowerCase();
+          var m = false;
+          for(var bi = 0; bi < msgEn.length; bi++){ if(blob.indexOf(msgEn[bi]) >= 0){ m = true; break; } }
+          if(!m && cnHit){
+            m = BIZ_CN.test(o.en + ' ' + o.cn + ' ' + o.tag);
+          }
+          (m ? bizHit : bizOther).push(o);
+        });
+        var pool = (bizHit.length >= 3) ? bizHit : bizHit.concat(bizOther);
+        for(var bi2 = pool.length - 1; bi2 > 0; bi2--){
+          var bj2 = Math.floor(Math.random() * (bi2 + 1)), bt2 = pool[bi2]; pool[bi2] = pool[bj2]; pool[bj2] = bt2;
+        }
+        pool.slice(0, 3).forEach(function(o){ priority.push('(商务·' + o.tag + ') "' + o.en + '" — ' + o.cn); });
       }
     }
     chosen.forEach(function(t){

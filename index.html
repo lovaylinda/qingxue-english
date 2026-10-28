@@ -3823,7 +3823,7 @@ ssRestoreView();
       }
       return pump();
     }).catch(function(err){
-      setReviewText('点评失败：' + (err && err.message ? err.message : err) + '\n（如果是当天免费额度用完，明天会自动恢复）');
+      setReviewText('点评失败：' + (err && err.message ? err.message : err) + '\n（多半是网络问题或服务波动，稍后再试；HTTP 429 才是当天额度用完）');
     });
   }
   function rebuildChat(){
@@ -3957,7 +3957,7 @@ ssRestoreView();
             /* 一个字都没收到：可能是额度用完/接口异常但回了 200，
                不能留个空气泡什么都不说 */
             if(!aiText){
-              aiBody.textContent = '（没收到回复：可能是今天的免费额度用完了，也可能是网络中断。晚点再试一次）';
+              aiBody.textContent = '（没收到回复：多半是网络波动或服务超时，稍后再试）';
               aiBody.classList.add('c-fail');
               aiBusy = false;
               return;
@@ -3990,11 +3990,17 @@ ssRestoreView();
       if(err.name === 'AbortError'){
         /* 掐断分两种：用户发了新消息主动 abort（静默），或 45 秒超时（要给提示） */
         if(abortCtrl && abortCtrl._timedOut){
-          aiBody.textContent = '（等了 45 秒一直没有回应：可能是今天 Cloudflare 免费额度用完了，也可能是网络中断。晚点再试一次）';
+          aiBody.textContent = '（等了 45 秒一直没有回应：多半是网络慢或中断了，稍后再试）';
           aiBody.classList.add('c-fail');
         }
       } else {
-        aiBody.textContent = '（连接失败：' + err.message + '）';
+        var em = (err && err.message) || '';
+        if(em.indexOf('429') >= 0){
+          /* 只有 429 才是真的当天额度用完（10,000 Neurons 耗尽，北京时间早 8 点恢复） */
+          aiBody.textContent = '（今天的免费额度真的用完了，北京时间早 8 点自动恢复。对话和语音共用这 10,000，语音是大头）';
+        } else {
+          aiBody.textContent = '（连接失败：' + em + '）';
+        }
       }
       aiBusy = false;
     });

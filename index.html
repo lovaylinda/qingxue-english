@@ -341,7 +341,7 @@ footer{
 
 <script src="./companions.js"></script>
 <script src="./englishpod_scenes.js"></script>
-<script src="./biz_books.js?v=2"></script>
+<script src="./biz_books.js?v=3"></script>
 <!-- englishpod_dialogues.js / familyalbum_dialogues.js 改为按需加载：选到相关话题时由 coach 模块动态注入 -->
 <script>
 var WORD_DATA = null;   // 词库数据：从 ./words.json 异步加载（见文件底部启动逻辑；必须通过 http(s) 访问）
@@ -750,6 +750,8 @@ function speak(text){
  * 同一句话第二次朗读零等待、零额度。合成失败退回手机自带朗读。 */
 var READ_VOICE = 'athena';
 var readAudioUrls = {};               /* text -> blobURL，让「再点一次=停止」和重复朗读复用 */
+var readPlayingText = '';             /* 当前正在朗读的句子（用于再点停止） */
+var readToken = 0;                    /* 朗读请求令牌：换句后旧请求作废 */
 function readCacheUrl(text){ return 'https://tts-cache.local/' + encodeURIComponent(READ_VOICE + '|' + text); }
 function readCachePut(text, blob){
   if(!window.caches || !caches.open) return;
@@ -765,9 +767,17 @@ function readCachePut(text, blob){
 function speakRead(text){
   if(!text) return;
   var conf = window.__TTS_BRIDGE;
-  if(!(conf && conf.url && window.fetch)){ speak(text); return; }
-  if(readAudioUrls[text]){ playMp3OrSpeak(readAudioUrls[text], text); return; }
+  if(!(conf && conf.url && conf.play && window.fetch)){ speak(text); return; }
+  /* 再点同句 = 停止 */
+  if(readPlayingText === text){ readPlayingText = ''; conf.stop(); return; }
+  readPlayingText = text;
+  var myToken = ++readToken;                 /* 换句后旧请求作废，防止旧音晚到抢播 */
+  if(readAudioUrls[text]){
+    conf.play(readAudioUrls[text]);
+    return;
+  }
   var onCacheMiss = function(){
+    if(readToken !== myToken) return;
     fetch(conf.url + '/edge', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-App-Key': conf.key },
@@ -776,12 +786,13 @@ function speakRead(text){
       if(!res.ok) throw new Error('HTTP ' + res.status);
       return res.blob();
     }).then(function(b){
+      if(readToken !== myToken) return;
       if(!b || !b.size || (b.type && b.type.indexOf('audio') === -1)) throw new Error('不是音频');
       readCachePut(text, b);
       var url = URL.createObjectURL(b);
       readAudioUrls[text] = url;
-      playMp3OrSpeak(url, text);
-    }).catch(function(){ speak(text); });
+      conf.play(url);
+    }).catch(function(){ if(readToken === myToken) speak(text); });
   };
   /* 缓存查询与 1.2s 计时器竞速：缓存再慢也不能拖住朗读 */
   var missFired = false;
@@ -795,7 +806,7 @@ function speakRead(text){
     if(b && b.size){
       var url = URL.createObjectURL(b);
       readAudioUrls[text] = url;
-      playMp3OrSpeak(url, text);
+      if(readToken === myToken) conf.play(url);
     } else missOnce();
   }).catch(missOnce);
   setTimeout(missOnce, 1200);
@@ -1760,6 +1771,8 @@ function render(){
   parseHash();
   ssSaveHash(location.hash);
   stopSound(); // 切换视图时停止正在播放的声音
+  readPlayingText = ''; readToken++;          /* 商务云端朗读一并停掉 */
+  if(window.__TTS_BRIDGE && window.__TTS_BRIDGE.stop){ try{ window.__TTS_BRIDGE.stop(); }catch(e){} }
   window.onscroll = null;
   var homeTarget = null;
   if(route.view !== 'review') revKey = null;
@@ -2412,8 +2425,14 @@ ssRestoreView();
      换 key 时两处要同步改，且 worker 需要重新部署。 */
   var APP_KEY = 'qx-linda-7f3k9m';
   var configured = WORKER_URL.indexOf('你的') === -1;
-  /* 暴露给阅读朗读（speakRead）：商务板块与语伴共用这套语音服务 */
-  window.__TTS_BRIDGE = { url: WORKER_URL, key: APP_KEY };
+  /* 暴露给阅读朗读（speakRead）：商务板块与语伴共用这套语音服务。
+     play 用语伴那个已解锁的持久 <audio> 元素播放（iOS 上 new Audio() 异步播放
+     会被拦导致无声，这是真机踩过的坑），stop 用来「再点一次=停止」。 */
+  window.__TTS_BRIDGE = {
+    url: WORKER_URL, key: APP_KEY,
+    play: function(url, onDone){ try{ playTtsUrl(url, onDone, 1, true); }catch(e){ if(onDone) onDone(); } },
+    stop: function(){ try{ stopCurrentTTS(); }catch(e){} }
+  };
 
   var COMPANIONS = window.COMPANIONS || {};
   var SCENES = window.ENGLISHPOD_SCENES || [];

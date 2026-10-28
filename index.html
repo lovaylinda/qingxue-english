@@ -777,67 +777,35 @@ function speakRead(text){
     conf.play(readAudioUrls[text]);
     return;
   }
-  /* 网络不好时绝不让人干等：3.5 秒云端还没回来，先用系统朗读垫上；
-     云端结果继续在后台取，取到后若系统还在念，无缝换成手册同款好声音，
-     否则只存缓存（下次点同一句直接出好声音）。 */
-  var fallbackOn = false;
-  var fallbackTimer = setTimeout(function(){
+  /* 第一时间出声：系统朗读必须在点击手势内【同步】调用，异步调 iOS 会静音拦截。
+     云端好声音在后台取，到了之后若系统还在念就无缝切换，念完了就只入缓存。 */
+  speak(text);
+  var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  var timer = ctrl ? setTimeout(function(){ try{ ctrl.abort(); }catch(e){} }, 12000) : null;
+  fetch(conf.url + '/edge', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-App-Key': conf.key },
+    body: JSON.stringify({ text: text, voice: READ_VOICE }),
+    signal: ctrl ? ctrl.signal : undefined
+  }).then(function(res){
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    return res.blob();
+  }).then(function(b){
+    if(timer) clearTimeout(timer);
+    if(!b || !b.size || (b.type && b.type.indexOf('audio') === -1)) throw new Error('不是音频');
+    readCachePut(text, b);
+    var url = URL.createObjectURL(b);
+    readAudioUrls[text] = url;
     if(readToken !== myToken) return;
-    fallbackOn = true;
-    speak(text);
-  }, 3500);
-  var onCacheMiss = function(){
-    if(readToken !== myToken) return;
-    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-    var timer = ctrl ? setTimeout(function(){ try{ ctrl.abort(); }catch(e){} }, 12000) : null;
-    fetch(conf.url + '/edge', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-App-Key': conf.key },
-      body: JSON.stringify({ text: text, voice: READ_VOICE }),
-      signal: ctrl ? ctrl.signal : undefined
-    }).then(function(res){
-      if(!res.ok) throw new Error('HTTP ' + res.status);
-      return res.blob();
-    }).then(function(b){
-      if(timer) clearTimeout(timer);
-      if(!b || !b.size || (b.type && b.type.indexOf('audio') === -1)) throw new Error('不是音频');
-      readCachePut(text, b);
-      var url = URL.createObjectURL(b);
-      readAudioUrls[text] = url;
-      if(readToken !== myToken) return;
-      if(fallbackOn){
-        /* 系统朗读还在念 → 停掉换成好声音；念完了 → 只入缓存，不打扰 */
-        var sysSpeaking = false;
-        try{ sysSpeaking = window.speechSynthesis && window.speechSynthesis.speaking; }catch(e){}
-        if(sysSpeaking){ conf.stop(); conf.play(url); }
-      } else {
-        clearTimeout(fallbackTimer);
-        conf.play(url);
-      }
-    }).catch(function(){
-      if(timer) clearTimeout(timer);
-      if(readToken !== myToken || fallbackOn) return;   /* 已经在念了，不用管 */
-      clearTimeout(fallbackTimer);
-      fallbackOn = true;
-      speak(text);
-    });
-  };
-  /* 缓存查询与 1.2s 计时器竞速：缓存再慢也不能拖住朗读 */
-  var missFired = false;
-  var missOnce = function(){ if(missFired) return; missFired = true; onCacheMiss(); };
-  var cacheP = (window.caches && caches.open)
-    ? caches.open('tts-v1').then(function(c){ return c.match(readCacheUrl(text)); })
-        .then(function(hit){ return hit ? hit.blob() : null; })
-    : Promise.resolve(null);
-  cacheP.then(function(b){
-    if(missFired) return;                       /* 缓存太慢，已经先走合成了 */
-    if(b && b.size){
-      var url = URL.createObjectURL(b);
-      readAudioUrls[text] = url;
-      if(readToken === myToken){ clearTimeout(fallbackTimer); conf.play(url); }
-    } else missOnce();
-  }).catch(missOnce);
-  setTimeout(missOnce, 1200);
+    var upgrading = false;
+    try{ upgrading = window.speechSynthesis && window.speechSynthesis.speaking; }catch(e){}
+    if(upgrading){ conf.stop(); conf.play(url); }   /* 无缝升级成手册同款好声音 */
+  }).catch(function(){
+    if(timer) clearTimeout(timer);
+    if(readToken !== myToken || readCloudWarned) return;
+    readCloudWarned = true;
+    toast('云端好声音暂时连不上，先用手机朗读；网络恢复后点同一句会自动升级音色');
+  });
 }
 
 /* 全局声音管理：同一时刻只播一个（mp3 或系统朗读），再点同句=停止 */
@@ -1714,8 +1682,8 @@ function renderChapterFlow(){
     btn.onclick = function(){
       var i = +btn.getAttribute('data-bi');
       if(!sayTexts[i]) return;
-      /* 商务阅读没有预生成 mp3，走与手册同音色的云端朗读（athena/Jenny），失败自动退回系统朗读 */
-      if(String(bk.bookId).indexOf('biz') === 0){ speakRead(sayTexts[i]); }
+      /* 商务阅读没有预生成 mp3：直接用手机自带朗读（同步调用，点击即响） */
+      if(String(bk.bookId).indexOf('biz') === 0){ stopSound(); speak(sayTexts[i]); }
       else playMp3OrSpeak('./_audio/' + bk.bookId + '_' + c.cid + '_' + i + '.mp3', sayTexts[i]);
     };
   });

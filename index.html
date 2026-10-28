@@ -4376,7 +4376,7 @@ ssRestoreView();
         return edgeTts(probe, pickedId).then(function(eb){
           var ems = Date.now() - t2;
           var a = cb ? ('一级 CF ✅ ' + cms + 'ms') : '一级 CF ❌';
-          var b = eb ? ('二级 Edge ✅ ' + ems + 'ms') : ('二级 Edge ❌ ' + (edgeLastErr || '不可用'));
+          var b = eb ? ('二级 Edge ✅ ' + ems + 'ms') : '二级 Edge ⏭ 备用未启用（不影响使用）';
           var tip = (cb && eb) ? ((cms <= ems ? '（CF 更快）' : '（Edge 更快）')) : '';
           toast(a + ' ｜ ' + b + tip);
         });

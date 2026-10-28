@@ -3873,6 +3873,15 @@ ssRestoreView();
       }
     }catch(e){}
   }
+  /* 发送链路任何一环出错（含请求前的同步异常），都要把"…"气泡落成可见的错误提示，
+     绝不能让转圈动画永远停在那里 */
+  function coachSendFail(e){
+    var msg = '（出错了：' + String((e && (e.stack || e.message)) || e).slice(0, 160) + '）';
+    var b = document.querySelector('.c-stream');
+    if(b){ b.classList.remove('c-stream'); b.textContent = msg; }
+    else coachAppend('ai', msg);
+    aiBusy = false;
+  }
   async function coachSend(text){
     text = (text||'').trim();
     if(!text) return;
@@ -3904,6 +3913,10 @@ ssRestoreView();
     if(ret.topics && ret.topics.length && !state.auto) syncTopicChips();
     aiBusy = true;
     abortCtrl = new AbortController();
+    /* 45 秒没等到任何回应就主动掐断，别让"三个点"无限转下去 */
+    var killT = setTimeout(function(){
+      if(abortCtrl){ abortCtrl._timedOut = true; try{ abortCtrl.abort(); }catch(e){} }
+    }, 45000);
     fetch(WORKER_URL, {
       method:'POST',
       headers:{'Content-Type':'application/json','X-App-Key':APP_KEY},
@@ -3939,6 +3952,7 @@ ssRestoreView();
         return reader.read().then(function(r){
           if(myReqId !== requestId) { return; }  // 角色已切换，丢弃旧请求
           if(r.done){
+            if(killT) clearTimeout(killT);
             if(buf) eat('\n');
             aiBody.classList.remove('c-stream');
             /* 一个字都没收到：可能是额度用完/接口异常但回了 200，
@@ -3965,9 +3979,16 @@ ssRestoreView();
       }
       return pump();
     }).catch(function(err){
+      if(killT) clearTimeout(killT);
       if(myReqId !== requestId) { aiBusy = false; return; }  // 角色已切换，静默丢弃
-      if(err.name !== 'AbortError'){
-        aiBody.classList.remove('c-stream');
+      aiBody.classList.remove('c-stream');
+      if(err.name === 'AbortError'){
+        /* 掐断分两种：用户发了新消息主动 abort（静默），或 45 秒超时（要给提示） */
+        if(abortCtrl && abortCtrl._timedOut){
+          aiBody.textContent = '（等了 45 秒一直没有回应：可能是今天 Cloudflare 免费额度用完了，也可能是网络中断。晚点再试一次）';
+          aiBody.classList.add('c-fail');
+        }
+      } else {
         aiBody.textContent = '（连接失败：' + err.message + '）';
       }
       aiBusy = false;
@@ -4756,11 +4777,11 @@ ssRestoreView();
     var topicsRoot = document.getElementById('coachTopics');
     document.getElementById('coachSend').addEventListener('click', function(){
       var inp = document.getElementById('coachText');
-      coachSend(inp.value); inp.value='';
+      coachSend(inp.value).catch(coachSendFail); inp.value='';
     });
     var ct = document.getElementById('coachText');
     ct.addEventListener('keydown', function(ev){
-      if(ev.key === 'Enter' && !ev.shiftKey){ ev.preventDefault(); coachSend(this.value); this.value=''; autoGrowText(); }
+      if(ev.key === 'Enter' && !ev.shiftKey){ ev.preventDefault(); coachSend(this.value).catch(coachSendFail); this.value=''; autoGrowText(); }
       // Shift+Enter 由浏览器默认插入换行
     });
     function autoGrowText(){ ct.style.height = 'auto'; ct.style.height = Math.min(ct.scrollHeight, 130) + 'px'; }

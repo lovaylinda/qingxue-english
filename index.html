@@ -734,6 +734,34 @@ function toast(msg){
 }
 function pct(a,b){ return b>0 ? Math.round(a/b*100) : 0; }
 
+/* 商务教材的英文句子前面带说话人标签（Mia: / Mr. Brack: / Clerk:），朗读时不该念出来。
+   做法：从商务数据里扫一遍，收集「真实被当作说话人用过」的标签，只剥这些。
+   不用「像人名的就剥」那种通用规则——否则 "Subject: ..."、Unit price: 3.5 这类正文
+   会被削掉开头，读出来就断句了。扫描只在第一次朗读时做一次，1600 条块，开销可忽略。 */
+var SPEAKER_LABELS = null;
+function speakerLabelSet(){
+  if(SPEAKER_LABELS) return SPEAKER_LABELS;
+  SPEAKER_LABELS = {};
+  try{
+    (window.BIZ_BOOKS || []).forEach(function(b){
+      (b.chapters || []).forEach(function(c){
+        (c.blocks || []).forEach(function(x){
+          if(!x || x[0] !== 0) return;
+          var m = String(x[2]).match(/^\s*([^:：\n]{1,20})[:：]\s*[A-Z"'“”‘’]/);
+          if(m) SPEAKER_LABELS[m[1].trim()] = 1;
+        });
+      });
+    });
+  }catch(e){}
+  return SPEAKER_LABELS;
+}
+function stripSpeakerLabel(text){
+  var s = String(text == null ? '' : text);
+  var m = s.match(/^\s*([^:：\n]{1,20})[:：]\s*(\S[\s\S]*)$/);
+  if(!m) return s;
+  return speakerLabelSet()[m[1].trim()] ? m[2] : s;
+}
+
 /* 朗读：使用浏览器自带的语音合成（TTS），离线可用 */
 function speak(text){
   if(!text) return;
@@ -1619,8 +1647,9 @@ function renderChapterFlow(){
     btn.onclick = function(){
       var i = +btn.getAttribute('data-bi');
       if(!sayTexts[i]) return;
-      /* 商务阅读没有预生成 mp3：直接用手机自带朗读（同步调用，点击即响） */
-      if(String(bk.bookId).indexOf('biz') === 0){ stopSound(); speak(sayTexts[i]); }
+      /* 商务阅读没有预生成 mp3：直接用手机自带朗读（同步调用，点击即响）。
+         句首的说话人标签（Mia: / Mr. Brack:）先剥掉再念，否则会把人名一起读出来。 */
+      if(String(bk.bookId).indexOf('biz') === 0){ stopSound(); speak(stripSpeakerLabel(sayTexts[i])); }
       else playMp3OrSpeak('./_audio/' + bk.bookId + '_' + c.cid + '_' + i + '.mp3', sayTexts[i]);
     };
   });
@@ -4429,7 +4458,6 @@ ssRestoreView();
       + '<div class="vp-items">' + renderItems() + '</div>'
       + '<div style="margin-top:12px;text-align:center;">'
       + '<button class="cbtn" id="vpSave" style="background:#4f46e5;color:#fff;padding:8px 24px;border-radius:8px;">✅ 保存并试听</button>'
-      + '<button class="cbtn cbtn-ghost" id="vpCheck" style="margin-left:8px;padding:8px 14px;">🔍 检测语音</button>'
       + '</div>'
       + '</div>';
     document.body.appendChild(panel);
@@ -4447,17 +4475,6 @@ ssRestoreView();
       toast('已保存，跟' + c.name + '说话时会用这个声音');
       panel.remove();
       coachSpeak('Hey! This is how I sound now.', function(){});
-    });
-    /* 语音体检：测一次云端，把延迟报出来 */
-    document.getElementById('vpCheck').addEventListener('click', function(){
-      if(!(configured && window.fetch)){ toast('还没配置 worker 地址，只能用手机自带朗读'); return; }
-      toast('正在检测云端语音…');
-      var probe = 'Okay, testing one two three.';
-      var t1 = Date.now();
-      cloudTts(probe, pickedId, null).then(function(cb){
-        toast(cb ? ('云端语音 ✅ ' + (Date.now() - t1) + 'ms')
-                 : '云端语音 ❌（可能是今天额度用完或网络不通，会自动用手机朗读兜底）');
-      });
     });
   }
 

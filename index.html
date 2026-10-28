@@ -2405,7 +2405,8 @@ ssRestoreView();
   var CROSS_SRC = [
     { file:'./englishpod_clean.js', topics:['通用日常','旅行出差','点餐美食','工作商务','健康养生','日常闲聊','情感共情','购物休闲','家庭孩子'] },
     { file:'./familyalbum_dialogues.js', topics:['日常闲聊','家庭孩子','点餐美食','情感共情','健康养生','职业规划','工作商务','个人成长','人生价值观探讨','日常生活场景'] },
-    { file:'./sitcom_dialogues.js', topics:['日常闲聊','情感共情','点餐美食','家庭孩子','工作商务','健康养生','购物休闲'] },
+    { file:'./sitcom_dialogues.js', topics:['日常闲聊','情感共情','点餐美食','家庭孩子','工作商务','健康养生','购物休闲','亲密关系','阅读与电影'] },
+    { file:'./parenting_dialogues.js', topics:['亲子关系','育儿与教育','家庭孩子','情感共情','健康养生','旅行出差','日常闲聊'] },
     { file:'./earnings_dialogues.js', topics: EARN_TOPICS },
     { file:'./hotwater_dialogues.js', topics:['社交礼仪','日常闲聊','情感共情','个人成长'] },
     { file:'./onpurpose_dialogues.js', topics:['身心成长','个人成长','认知提升的重要性','情感共情','健康养生','职业规划','人生价值观探讨','生命的意义'] },
@@ -2722,6 +2723,13 @@ ssRestoreView();
     });
     return loose.slice(0, 8);
   }
+  /* 语料句子自带的 tag → 投放话题。
+     优先认 CORPUS 里真实存在的话题名（这样数据文件可以直接写「亲密关系」「家庭孩子」），
+     再退回 TAG_MAP 的旧别名表，最后才用调用方给的默认话题。 */
+  function topicOfTag(tag, defTopic){
+    if(tag && window.CORPUS && window.CORPUS.topics && window.CORPUS.topics[tag]) return tag;
+    return TAG_MAP[tag] || defTopic;
+  }
   function buildTopicIndex(){
     var SC = window.ENGLISHPOD_SCENES || [];
     var EP_DLG = window.ENGLISHPOD_DIALOGUES;
@@ -2773,7 +2781,9 @@ ssRestoreView();
         var d = SIT.topics[show];
         if(!d || !d.sentences) return;
         d.sentences.forEach(function(s){
-          var tp = TAG_MAP[s.tag] || '日常闲聊';
+          /* 剧集句子现在带真实话题名（亲密关系/家庭孩子/工作商务…），
+             只要 CORPUS 里有同名话题就直接用，不再一律并进「日常闲聊」 */
+          var tp = topicOfTag(s.tag, '日常闲聊');
           pushIndex(tp, show, show, [{ en: s.en, cn: s.cn }]);
           /* 除了按句子 tag 分流，也留一份到剧名本身：这样选「老友记」时也能混入别的来源 */
           if(tp !== show) pushIndex(show, show, show, [{ en: s.en, cn: s.cn }]);
@@ -2787,7 +2797,7 @@ ssRestoreView();
       Object.keys(D.topics).forEach(function(t){
         var d = D.topics[t];
         (d.sentences || []).forEach(function(s){
-          var tp = TAG_MAP[s.tag] || defTopic;
+          var tp = topicOfTag(s.tag, defTopic);
           pushIndex(tp, family, labelFn(s, t), [{ en: s.en, cn: s.cn }]);
           /* 同时留一份到该源自己的标签（如「身心成长」「美食旅行实拍」「真人闲聊对话」），
              否则这些标签在跨源索引里是 0 条，选中时只能听到单一来源 */
@@ -2819,6 +2829,9 @@ ssRestoreView();
     mini('ONPURPOSE_DIALOGUES', '身心成长', '身心成长', function(s){ return 'On Purpose·' + (s.tag || '对白'); }, 'On Purpose');
     mini('VIDEO_DIALOGUES', '美食旅行实拍', '美食旅行实拍', function(s){ return '美食实拍·' + (s.tag || '对白'); }, '美食实拍');
     mini('REC_DIALOGUES', '日常闲聊', '真人闲聊对话', function(s){ return '真人闲聊·' + (s.tag || '对白'); }, '真人闲聊');
+    /* 美国家庭万用亲子英文：整本书就是「家长对孩子说什么」，按句子自带话题投放。
+       不给它单独开 chip —— 亲子关系 / 育儿与教育 / 家庭孩子 这三个现成话题就是它的入口。 */
+    mini('PARENTING_DIALOGUES', '亲子关系', null, function(s){ return '亲子8000句·' + (s.tag || '日常'); }, '美国亲子8000句');
     var DOCS = window.DOCS_DIALOGUES;
     if(DOCS && DOCS.topics && !_crossBuilt.docs){
       _crossBuilt.docs = 1;
@@ -2866,8 +2879,15 @@ ssRestoreView();
     /* 池子薄的话少拿几条：牙科只有 11 句真实对白，一轮拿 5 条等于两轮转一圈，
        所以按池子深度收缩配额，把名额让给话题句（它们有 70 多条）。 */
     var maxN = entry.list.length >= 40 ? 5 : (entry.list.length >= 16 ? 3 : 2);
+    /* 族顺序不能按插入顺序：EnglishPod 一集一个族，前 5 个族永远占满 5 个名额，
+       后面体量更大的来源（比如 900 句的亲子英文）一辈子轮不到。
+       改成「按族大小加权随机排序」，大来源出场概率高，小来源也仍有机会。 */
+    function orderFams(grp){
+      function k(sz){ return -Math.log(Math.random() || 1e-9) / Math.max(1, sz); }
+      return Object.keys(grp).sort(function(a, b){ return k(grp[a].length) - k(grp[b].length); });
+    }
     [freshG, usedG].forEach(function(grp){
-      var fams = Object.keys(grp), got = 0;
+      var fams = orderFams(grp), got = 0;
       while(out.length < maxN && got < maxN){
         var any = false;
         for(var fi = 0; fi < fams.length && out.length < maxN; fi++){

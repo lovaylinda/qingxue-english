@@ -1124,22 +1124,14 @@ function renderHome(){
   var uniqW = uniqueWordTotal() || totalW;
   var doneU = learnedTotal();
   var totalS = sentenceTotal(), doneS = learnedSentence();
-  var grandPct = pct(doneU+doneS+doneE+doneB+doneY, uniqW+totalS+totalE+totalB+totalY);
+  var grandPct = pct(doneU+doneS, uniqW+totalS);
 
   var html = '';
-  var nSets = 0;
-  WORD_DATA.forEach(function(s){ if(!s.hidden) nSets++; });
-  html += '<div class="hero"><h1>每天一点点，轻松说英语</h1>'
-       + '<p>' + nSets + ' 个词表专题 · ' + uniqW.toLocaleString() + ' 个不同单词'
-       + (totalS ? ' · ' + totalS.toLocaleString() + ' 条口语/短语' : '')
-       + ' · ' + POD_DATA.length + ' 套音视频节目 · APEC 手册 ' + totalB + ' 条双语'
-       + (totalY ? ' · 商务阅读 ' + totalY + ' 条' : '') + '</p></div>';
+  html += '<div class="hero"><h1>每天一点点，轻松说英语</h1></div>';
 
   html += '<div class="overall"><span class="big">' + grandPct + '%</span>'
        + '<span class="meta">已掌握单词 ' + doneU.toLocaleString() + ' / ' + uniqW.toLocaleString()
        + (totalS ? ' · 口语/短语 ' + doneS.toLocaleString() + ' / ' + totalS.toLocaleString() + ' 条' : '')
-       + ' · 已听 ' + doneE + ' / ' + totalE + ' 集 · 手册 ' + doneB + ' / ' + totalB + ' 条'
-       + (totalY ? ' · 商务 ' + doneY + ' / ' + totalY + ' 条' : '')
        + '</span>'
        + '<span class="pbar"><i style="width:' + grandPct + '%"></i></span></div>';
 
@@ -1195,7 +1187,6 @@ function renderHome(){
 
   if(BIZ_BOOKS.length){
     html += '<div class="sect-title" id="sec-biz">商务英语阅读</div>'
-         + '<div class="sect-note">读的方式和上面一样：一章一章读，中英对照，每句都能朗读，读过的点「标记已学」。</div>'
          + '<div class="grid2">';
     BIZ_BOOKS.forEach(function(bk){
       var nb = 0, db = 0;

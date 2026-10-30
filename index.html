@@ -911,21 +911,6 @@ function stopSound(){
   }
   if('speechSynthesis' in window){ try{ window.speechSynthesis.cancel(); }catch(e){} }
 }
-function playMp3OrSpeak(url, fallbackText){
-  if(curAudUrl === url){ stopSound(); return; } // 同句正在播放时再点=停止
-  stopSound();
-  var aud = new Audio(url);
-  curAud = aud;
-  var fb = false;
-  function fbSpeak(){
-    if(fb) return; fb = true;
-    if(curAud === aud){ curAud = null; curAudUrl = null; speak(fallbackText); }
-  }
-  aud.onerror = fbSpeak;
-  aud.onended = function(){ if(curAud === aud){ curAud = null; curAudUrl = null; } };
-  aud.play().then(function(){ if(curAud === aud){ curAudUrl = url; } }).catch(fbSpeak);
-}
-
 /* ================= 朗读：词表和商务版块共用同一个音源 =================
    为什么不用手机自带 TTS：安卓自带的英文音色通常只有国产引擎那一个机器女声，
    iPhone 好一些，但两端完全不一样。这里统一走「百度朗读接口」——
@@ -1839,9 +1824,10 @@ function renderChapterFlow(){
       if(ev && ev.preventDefault) ev.preventDefault();
       var i = +btn.getAttribute('data-bi');
       if(!sayTexts[i]) return;
-      /* 手册类：预生成 mp3 优先，playMp3OrSpeak 自己处理「再点=停止」 */
+      /* 手册类（APEC）与商务统一走 say()：百度真人音，4 秒不出声再退回系统朗读。
+         不再依赖 ./_audio 预录文件（项目里没有，会 404 退回机器音）。 */
       if(String(bk.bookId).indexOf('biz') !== 0){
-        playMp3OrSpeak('./_audio/' + bk.bookId + '_' + c.cid + '_' + i + '.mp3', sayTexts[i]);
+        say(sayTexts[i]);
         return;
       }
       /* 商务：点一次出声；同一条再点（哪怕没读完）立刻停；再点又从头念。
